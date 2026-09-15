@@ -4,3 +4,6 @@
 # Загруженные пользователями файлы
 static/uploads/*
 !static/uploads/.gitkeep
+
+# Локальные настройки БД — скопируйте config/db.example.php в config/db.php
+config/db.php
