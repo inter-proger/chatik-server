@@ -8,7 +8,7 @@ require_once __DIR__ . '/../core/ErrorCode.php';
 
 $userId = Auth::requireUserId();
 
-$fileId = $_POST['file_id'] ?? '';
+$fileId = $_POST['fileId'] ?? '';
 
 if (!ctype_digit((string) $fileId) || (int) $fileId <= 0) {
     Response::error(ErrorCode::FILE_NOT_FOUND);

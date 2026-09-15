@@ -8,7 +8,7 @@ class User
     /**
      * Возвращает объект User по id или null, если пользователь не найден.
      *
-     * Формат: user_id, login, name, avatar (сущность File или null)
+     * Формат: userId, login, name, avatar (сущность File или null)
      */
     public static function findById(int $id): ?array
     {
@@ -46,7 +46,7 @@ class User
         }
 
         return [
-            'user_id' => (int) $row['id'],
+            'userId'  => (int) $row['id'],
             'login'   => $row['login'],
             'name'    => $row['name'],
             'avatar'  => $avatar,

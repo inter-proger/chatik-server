@@ -26,25 +26,25 @@
 
 | Поле      | Тип           | Описание                                              |
 |-----------|---------------|-------------------------------------------------------|
-| `user_id` | Int           | Идентификатор пользователя                            |
+| `userId` | Int           | Идентификатор пользователя                            |
 | `login`   | String        | Логин                                                 |
 | `name`    | String        | Отображаемое имя                                      |
 | `avatar`  | File \| null  | Аватар — объект [File](#объект-file) типа `image` (опционально) |
 
 ```json
 {
-  "user_id": 1,
+  "userId": 1,
   "login": "ivan",
   "name": "Ivan Petrov",
   "avatar": {
-    "file_id": 1,
+    "fileId": 1,
     "type": "image",
     "url": "http://localhost:8080/static/uploads/2026/09/952c7adde9fc838c66ee905324c1e8fa.jpg",
     "size": 8293,
     "filename": "avatar.jpg",
     "extension": "jpg",
     "data": {
-      "small_url": "http://localhost:8080/static/uploads/2026/09/952c7adde9fc838c66ee905324c1e8fa_small.jpg"
+      "smallUrl": "http://localhost:8080/static/uploads/2026/09/952c7adde9fc838c66ee905324c1e8fa_small.jpg"
     }
   }
 }
@@ -54,7 +54,7 @@
 
 | Поле        | Тип    | Описание                                                        |
 |-------------|--------|-----------------------------------------------------------------|
-| `file_id`   | Int    | Идентификатор файла                                             |
+| `fileId`   | Int    | Идентификатор файла                                             |
 | `type`      | String | Тип файла: `image` или `other` (список будет расширяться)        |
 | `url`       | String | Ссылка на файл                                                  |
 | `size`      | Int    | Размер в байтах                                                 |
@@ -68,18 +68,18 @@
 
 | Поле        | Тип    | Описание                                                                        |
 |-------------|--------|---------------------------------------------------------------------------------|
-| `small_url` | String | Ссылка на уменьшенную копию: не более 200 пикселей по меньшей стороне           |
+| `smallUrl` | String | Ссылка на уменьшенную копию: не более 200 пикселей по меньшей стороне           |
 
 ```json
 {
-  "file_id": 1,
+  "fileId": 1,
   "type": "image",
   "url": "http://localhost:8080/static/uploads/2026/09/952c7adde9fc838c66ee905324c1e8fa.jpg",
   "size": 8293,
   "filename": "photo.jpg",
   "extension": "jpg",
   "data": {
-    "small_url": "http://localhost:8080/static/uploads/2026/09/952c7adde9fc838c66ee905324c1e8fa_small.jpg"
+    "smallUrl": "http://localhost:8080/static/uploads/2026/09/952c7adde9fc838c66ee905324c1e8fa_small.jpg"
   }
 }
 ```
@@ -97,7 +97,7 @@
 | 3001 | Файл не передан                                       | `/files/uploadImage`          |
 | 3002 | Файл слишком большой (максимум 10 МБ)                 | `/files/uploadImage`          |
 | 3003 | Файл не является изображением                         | `/files/uploadImage`, `/profile/setAvatar` |
-| 3004 | Файл не найден / невалидный `file_id`                 | `/files/get`, `/profile/setAvatar` |
+| 3004 | Файл не найден / невалидный `fileId`                 | `/files/get`, `/profile/setAvatar` |
 | 3005 | Ошибка сохранения файла                               | `/files/uploadImage`          |
 
 ---
@@ -188,7 +188,7 @@
 {
   "status": 1,
   "response": {
-    "user_id": 1,
+    "userId": 1,
     "login": "ivan",
     "name": "Ivan Petrov",
     "avatar": null
@@ -212,7 +212,7 @@
 
 | Поле      | Тип | Обязательное | Описание                                   |
 |-----------|-----|--------------|--------------------------------------------|
-| `file_id` | Int | Да           | Идентификатор ранее загруженного изображения |
+| `fileId` | Int | Да           | Идентификатор ранее загруженного изображения |
 
 #### Успешный ответ
 
@@ -222,18 +222,18 @@
 {
   "status": 1,
   "response": {
-    "user_id": 1,
+    "userId": 1,
     "login": "ivan",
     "name": "Ivan Petrov",
     "avatar": {
-      "file_id": 1,
+      "fileId": 1,
       "type": "image",
       "url": "http://localhost:8080/static/uploads/2026/09/952c7adde9fc838c66ee905324c1e8fa.jpg",
       "size": 8293,
       "filename": "avatar.jpg",
       "extension": "jpg",
       "data": {
-        "small_url": "http://localhost:8080/static/uploads/2026/09/952c7adde9fc838c66ee905324c1e8fa_small.jpg"
+        "smallUrl": "http://localhost:8080/static/uploads/2026/09/952c7adde9fc838c66ee905324c1e8fa_small.jpg"
       }
     }
   }
@@ -246,7 +246,7 @@
 |------|-----------------------------------------------------------------|
 | 2003 | Пользователь не авторизован                                     |
 | 3003 | Файл не является изображением                                   |
-| 3004 | Файл не найден, невалидный `file_id` или файл принадлежит другому пользователю |
+| 3004 | Файл не найден, невалидный `fileId` или файл принадлежит другому пользователю |
 
 ---
 
@@ -266,7 +266,7 @@
 {
   "status": 1,
   "response": {
-    "user_id": 1,
+    "userId": 1,
     "login": "ivan",
     "name": "Ivan Petrov",
     "avatar": null
@@ -303,14 +303,14 @@
 {
   "status": 1,
   "response": {
-    "file_id": 1,
+    "fileId": 1,
     "type": "image",
     "url": "http://localhost:8080/static/uploads/2026/09/952c7adde9fc838c66ee905324c1e8fa.jpg",
     "size": 8293,
     "filename": "photo.jpg",
     "extension": "jpg",
     "data": {
-      "small_url": "http://localhost:8080/static/uploads/2026/09/952c7adde9fc838c66ee905324c1e8fa_small.jpg"
+      "smallUrl": "http://localhost:8080/static/uploads/2026/09/952c7adde9fc838c66ee905324c1e8fa_small.jpg"
     }
   }
 }
@@ -336,7 +336,7 @@
 
 | Поле      | Тип | Обязательное | Описание            |
 |-----------|-----|--------------|---------------------|
-| `file_id` | Int | Да           | Идентификатор файла |
+| `fileId` | Int | Да           | Идентификатор файла |
 
 #### Успешный ответ
 
@@ -344,14 +344,14 @@
 {
   "status": 1,
   "response": {
-    "file_id": 1,
+    "fileId": 1,
     "type": "image",
     "url": "http://localhost:8080/static/uploads/2026/09/952c7adde9fc838c66ee905324c1e8fa.jpg",
     "size": 8293,
     "filename": "photo.jpg",
     "extension": "jpg",
     "data": {
-      "small_url": "http://localhost:8080/static/uploads/2026/09/952c7adde9fc838c66ee905324c1e8fa_small.jpg"
+      "smallUrl": "http://localhost:8080/static/uploads/2026/09/952c7adde9fc838c66ee905324c1e8fa_small.jpg"
     }
   }
 }
@@ -361,4 +361,4 @@
 
 | Код  | Описание                                |
 |------|-----------------------------------------|
-| 3004 | Файл не найден / невалидный `file_id`   |
+| 3004 | Файл не найден / невалидный `fileId`   |

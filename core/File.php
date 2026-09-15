@@ -20,7 +20,7 @@ class File
     /**
      * Возвращает сущность файла по id или null, если не найден.
      *
-     * Формат: file_id, type, url, size, filename, extension, data
+     * Формат: fileId, type, url, size, filename, extension, data
      */
     public static function findById(int $id): ?array
     {
@@ -37,15 +37,15 @@ class File
     {
         $data = json_decode($row['data'], true) ?: [];
 
-        // В БД для картинки хранится small_path, наружу отдаём small_url
+        // В БД для картинки хранится small_path, наружу отдаём smallUrl
         if ($row['type'] === self::TYPE_IMAGE) {
-            $data = ['small_url' => self::url($data['small_path'] ?? $row['path'])];
+            $data = ['smallUrl' => self::url($data['small_path'] ?? $row['path'])];
         } else {
             $data = [];
         }
 
         return [
-            'file_id'   => (int) $row['id'],
+            'fileId'    => (int) $row['id'],
             'type'      => $row['type'],
             'url'       => self::url($row['path']),
             'size'      => (int) $row['size'],

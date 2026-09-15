@@ -4,7 +4,7 @@ require_once __DIR__ . '/../core/File.php';
 require_once __DIR__ . '/../core/Response.php';
 require_once __DIR__ . '/../core/ErrorCode.php';
 
-$fileId = $_REQUEST['file_id'] ?? '';
+$fileId = $_REQUEST['fileId'] ?? '';
 
 if (!ctype_digit((string) $fileId) || (int) $fileId <= 0) {
     Response::error(ErrorCode::FILE_NOT_FOUND);
