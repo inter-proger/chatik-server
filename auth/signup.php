@@ -3,6 +3,7 @@
 require_once __DIR__ . '/../core/DB.php';
 require_once __DIR__ . '/../core/Response.php';
 require_once __DIR__ . '/../core/ErrorCode.php';
+require_once __DIR__ . '/../core/User.php';
 
 $login    = trim($_POST['login']    ?? '');
 $password = trim($_POST['password'] ?? '');
@@ -43,4 +44,4 @@ session_regenerate_id(true);
 $_SESSION['user_id'] = $userId;
 $_SESSION['name']    = $name;
 
-Response::success(['userId' => $userId, 'name' => $name]);
+Response::success(User::findById($userId));

@@ -118,12 +118,16 @@
 
 #### Успешный ответ
 
+В `response` — объект [User](#объект-user) созданного пользователя.
+
 ```json
 {
   "status": 1,
   "response": {
     "userId": 1,
-    "name": "Ivan Petrov"
+    "login": "ivan",
+    "name": "Ivan Petrov",
+    "avatar": null
   }
 }
 ```
@@ -143,12 +147,16 @@
 
 #### Успешный ответ
 
+В `response` — объект [User](#объект-user) вошедшего пользователя.
+
 ```json
 {
   "status": 1,
   "response": {
     "userId": 1,
-    "name": "Ivan Petrov"
+    "login": "ivan",
+    "name": "Ivan Petrov",
+    "avatar": null
   }
 }
 ```
