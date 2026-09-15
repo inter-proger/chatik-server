@@ -1,0 +1,6 @@
+.DS_Store
+.claude/settings.local.json
+
+# Загруженные пользователями файлы
+static/uploads/*
+!static/uploads/.gitkeep
