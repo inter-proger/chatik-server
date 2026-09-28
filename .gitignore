@@ -5,5 +5,8 @@
 static/uploads/*
 !static/uploads/.gitkeep
 
+# Файлы сессий
+storage/
+
 # Локальные настройки БД — скопируйте config/db.example.php в config/db.php
 config/db.php

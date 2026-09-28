@@ -2,6 +2,7 @@
 
 require_once __DIR__ . '/../core/DB.php';
 require_once __DIR__ . '/../core/Response.php';
+require_once __DIR__ . '/../core/Session.php';
 require_once __DIR__ . '/../core/ErrorCode.php';
 require_once __DIR__ . '/../core/User.php';
 
@@ -25,7 +26,7 @@ if (!$user || !password_verify($password, $user['password_hash'])) {
     Response::error(ErrorCode::WRONG_CREDENTIALS);
 }
 
-session_start();
+Session::start();
 session_regenerate_id(true);
 $_SESSION['user_id'] = (int) $user['id'];
 $_SESSION['name']    = $user['name'];

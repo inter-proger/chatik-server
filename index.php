@@ -13,6 +13,9 @@ $routes = [
     '/profile/removeAvatar' => __DIR__ . '/profile/removeAvatar.php',
     '/files/uploadImage' => __DIR__ . '/files/uploadImage.php',
     '/files/get'   => __DIR__ . '/files/get.php',
+    '/users/getList' => __DIR__ . '/users/getList.php',
+    '/conversations/createSingle' => __DIR__ . '/conversations/createSingle.php',
+    '/conversations/getList' => __DIR__ . '/conversations/getList.php',
 ];
 
 if (!isset($routes[$uri])) {

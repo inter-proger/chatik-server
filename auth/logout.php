@@ -1,9 +1,10 @@
 <?php
 
 require_once __DIR__ . '/../core/Response.php';
+require_once __DIR__ . '/../core/Session.php';
 require_once __DIR__ . '/../core/ErrorCode.php';
 
-session_start();
+Session::start();
 
 if (empty($_SESSION['user_id'])) {
     Response::error(ErrorCode::NOT_AUTHENTICATED);

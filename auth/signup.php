@@ -2,6 +2,7 @@
 
 require_once __DIR__ . '/../core/DB.php';
 require_once __DIR__ . '/../core/Response.php';
+require_once __DIR__ . '/../core/Session.php';
 require_once __DIR__ . '/../core/ErrorCode.php';
 require_once __DIR__ . '/../core/User.php';
 
@@ -39,7 +40,7 @@ $stmt = $db->prepare('INSERT INTO users (login, password_hash, name) VALUES (?, 
 $stmt->execute([$login, $hash, $name]);
 $userId = (int) $db->lastInsertId();
 
-session_start();
+Session::start();
 session_regenerate_id(true);
 $_SESSION['user_id'] = $userId;
 $_SESSION['name']    = $name;
