@@ -4,6 +4,7 @@ require_once __DIR__ . '/DB.php';
 require_once __DIR__ . '/Response.php';
 require_once __DIR__ . '/ErrorCode.php';
 require_once __DIR__ . '/../config/files.php';
+require_once __DIR__ . '/../config/app.php';
 
 class File
 {
@@ -16,6 +17,9 @@ class File
         'image/png'  => 'png',
         'image/webp' => 'webp',
     ];
+
+    /** Максимальная длина расширения — соответствует колонке files.extension */
+    const EXTENSION_MAX_LENGTH = 32;
 
     /**
      * Возвращает сущность файла по id или null, если не найден.
@@ -67,8 +71,14 @@ class File
         $mime = (new finfo(FILEINFO_MIME_TYPE))->file($upload['tmp_name']);
         $diskExt = self::IMAGE_MIMES[$mime] ?? null;
 
-        if ($diskExt === null || @getimagesize($upload['tmp_name']) === false) {
+        $size = $diskExt !== null ? @getimagesize($upload['tmp_name']) : false;
+        if ($size === false) {
             Response::error(ErrorCode::FILE_NOT_IMAGE);
+        }
+
+        // Проверяем до декодирования: маленький файл может распаковаться в гигабайты
+        if ($size[0] * $size[1] > IMAGE_MAX_PIXELS) {
+            Response::error(ErrorCode::FILE_TOO_LARGE);
         }
 
         [$absDir, $relDir] = self::makeUploadDir();
@@ -76,13 +86,27 @@ class File
 
         $relPath      = "$relDir/$base.$diskExt";
         $relSmallPath = "$relDir/{$base}_small.$diskExt";
+        $absPath      = "$absDir/$base.$diskExt";
+        $absSmallPath = "$absDir/{$base}_small.$diskExt";
 
-        if (!move_uploaded_file($upload['tmp_name'], "$absDir/$base.$diskExt")) {
+        if (!move_uploaded_file($upload['tmp_name'], $absPath)) {
             Response::error(ErrorCode::FILE_UPLOAD_FAILED);
         }
 
-        if (!self::makeSmallCopy("$absDir/$base.$diskExt", "$absDir/{$base}_small.$diskExt", $mime)) {
-            @unlink("$absDir/$base.$diskExt");
+        // При любой ошибке дальше файлы на диске не должны остаться без записи в БД
+        $cleanup = function () use ($absPath, $absSmallPath) {
+            @unlink($absPath);
+            @unlink($absSmallPath);
+        };
+
+        try {
+            $ok = self::makeSmallCopy($absPath, $absSmallPath, $mime);
+        } catch (Throwable $e) {
+            $cleanup();
+            throw $e;
+        }
+        if (!$ok) {
+            $cleanup();
             Response::error(ErrorCode::FILE_UPLOAD_FAILED);
         }
 
@@ -90,33 +114,38 @@ class File
             'INSERT INTO files (user_id, type, path, size, filename, extension, data)
              VALUES (?, ?, ?, ?, ?, ?, ?)'
         );
-        $stmt->execute([
-            $userId,
-            self::TYPE_IMAGE,
-            $relPath,
-            (int) $upload['size'],
-            $filename,
-            self::extensionOf($filename),
-            json_encode(['small_path' => $relSmallPath]),
-        ]);
+        try {
+            $stmt->execute([
+                $userId,
+                self::TYPE_IMAGE,
+                $relPath,
+                (int) $upload['size'],
+                $filename,
+                self::extensionOf($filename),
+                json_encode(['small_path' => $relSmallPath]),
+            ]);
+        } catch (Throwable $e) {
+            $cleanup();
+            throw $e;
+        }
 
         return self::findById((int) DB::get()->lastInsertId());
     }
 
-    /** Расширение из имени файла; если его нет — "file". */
+    /** Расширение из имени файла (не длиннее EXTENSION_MAX_LENGTH); если его нет — "file". */
     public static function extensionOf(string $filename): string
     {
-        $ext = strtolower(pathinfo($filename, PATHINFO_EXTENSION));
-        return $ext !== '' ? $ext : 'file';
+        $ext = mb_strtolower(pathinfo($filename, PATHINFO_EXTENSION));
+        return $ext !== '' ? mb_substr($ext, 0, self::EXTENSION_MAX_LENGTH) : 'file';
     }
 
-    /** Абсолютный URL для пути относительно корня проекта. */
+    /**
+     * Абсолютный URL для пути относительно корня проекта.
+     * Хост берётся из конфига, а не из заголовка Host, который присылает клиент.
+     */
     private static function url(string $relPath): string
     {
-        $https  = !empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off';
-        $scheme = $https ? 'https' : 'http';
-        $host   = $_SERVER['HTTP_HOST'] ?? 'localhost';
-        return "$scheme://$host/" . ltrim($relPath, '/');
+        return rtrim(BASE_URL, '/') . '/' . ltrim($relPath, '/');
     }
 
     /** Создаёт каталог вида static/uploads/YYYY/MM, возвращает [абсолютный, относительный]. */
@@ -145,9 +174,7 @@ class File
             return copy($src, $dst);
         }
 
-        $ratio = IMAGE_SMALL_SIDE / $minSide;
-        $nw = max(1, (int) round($w * $ratio));
-        $nh = max(1, (int) round($h * $ratio));
+        ini_set('memory_limit', IMAGE_MEMORY_LIMIT);
 
         $image = match ($mime) {
             'image/jpeg' => imagecreatefromjpeg($src),
@@ -158,6 +185,17 @@ class File
         if ($image === false) {
             return false;
         }
+
+        // imagejpeg не сохраняет EXIF, поэтому поворот из Orientation применяем к пикселям
+        if ($mime === 'image/jpeg') {
+            $image = self::applyExifOrientation($image, $src);
+            $w = imagesx($image);
+            $h = imagesy($image);
+        }
+
+        $ratio = IMAGE_SMALL_SIDE / $minSide;
+        $nw = max(1, (int) round($w * $ratio));
+        $nh = max(1, (int) round($h * $ratio));
 
         $small = imagecreatetruecolor($nw, $nh);
 
@@ -177,5 +215,32 @@ class File
         };
 
         return $ok;
+    }
+
+    /**
+     * Поворачивает/отражает изображение согласно EXIF Orientation (значения 2–8),
+     * чтобы пиксели совпадали с тем, как исходник показывает браузер.
+     */
+    private static function applyExifOrientation(GdImage $image, string $src): GdImage
+    {
+        if (!function_exists('exif_read_data')) {
+            return $image;
+        }
+
+        $exif = @exif_read_data($src);
+        $orientation = (int) ($exif['Orientation'] ?? 1);
+
+        // imagerotate поворачивает против часовой стрелки
+        switch ($orientation) {
+            case 2: imageflip($image, IMG_FLIP_HORIZONTAL); break;
+            case 3: $image = imagerotate($image, 180, 0); break;
+            case 4: imageflip($image, IMG_FLIP_VERTICAL); break;
+            case 5: $image = imagerotate($image, -90, 0); imageflip($image, IMG_FLIP_HORIZONTAL); break;
+            case 6: $image = imagerotate($image, -90, 0); break;
+            case 7: $image = imagerotate($image, 90, 0); imageflip($image, IMG_FLIP_HORIZONTAL); break;
+            case 8: $image = imagerotate($image, 90, 0); break;
+        }
+
+        return $image;
     }
 }

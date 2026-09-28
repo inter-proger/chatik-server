@@ -25,4 +25,7 @@ class ErrorCode
 
     // Conversations
     const CONVERSATION_WITH_SELF = 5001;
+
+    // Server
+    const INTERNAL_ERROR    = 9001;
 }

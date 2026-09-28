@@ -12,4 +12,4 @@ PHP REST API без фреймворка: `index.php` — роутер, обра
 
 - Документация API ведётся только в `API_Documentation.md`; при добавлении или изменении метода обновлять её в том же изменении.
 - Изменения схемы БД — отдельным файлом-миграцией в `db/` с порядковым номером (`004_....sql`).
-- `config/db.php` в репозиторий не попадает; шаблон — `config/db.example.php`.
+- `config/db.php` и `config/app.php` в репозиторий не попадают; шаблоны — `config/db.example.php` и `config/app.example.php`.

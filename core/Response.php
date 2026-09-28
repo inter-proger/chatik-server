@@ -16,7 +16,8 @@ class Response
     private static function send(array $payload): void
     {
         header('Content-Type: application/json; charset=utf-8');
-        echo json_encode($payload, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
+        // Невалидный UTF-8 заменяется на U+FFFD, иначе json_encode вернёт false и тело будет пустым
+        echo json_encode($payload, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES | JSON_INVALID_UTF8_SUBSTITUTE);
         exit;
     }
 }

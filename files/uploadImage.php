@@ -30,7 +30,8 @@ $filename = trim($_POST['filename'] ?? '');
 if ($filename === '') {
     $filename = basename($upload['name']);
 }
-$filename = mb_substr($filename, 0, 255);
+// Невалидные UTF-8 байты заменяем, иначе MySQL отклонит строку
+$filename = mb_substr(mb_scrub($filename, 'UTF-8'), 0, 255);
 
 $file = File::storeImage($upload, $filename, $userId);
 

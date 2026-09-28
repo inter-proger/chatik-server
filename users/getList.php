@@ -10,7 +10,8 @@ const USERS_MAX_COUNT     = 100;
 
 Auth::requireUserId();
 
-$query = trim((string) ($_REQUEST['query'] ?? ''));
+// Невалидные UTF-8 байты заменяем, иначе MySQL отклонит строку
+$query = trim(mb_scrub((string) ($_REQUEST['query'] ?? ''), 'UTF-8'));
 $maxId = $_REQUEST['maxId'] ?? '';
 $count = $_REQUEST['count'] ?? '';
 

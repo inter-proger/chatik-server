@@ -1,6 +1,26 @@
 <?php
 
 require_once __DIR__ . '/core/Response.php';
+require_once __DIR__ . '/core/ErrorCode.php';
+
+// Детали ошибок пишем только в лог, клиенту отдаём INTERNAL_ERROR
+ini_set('display_errors', '0');
+ini_set('log_errors', '1');
+
+set_exception_handler(function (Throwable $e) {
+    error_log((string) $e);
+    http_response_code(500);
+    Response::error(ErrorCode::INTERNAL_ERROR);
+});
+
+// Фатальные ошибки (например, нехватка памяти) исключением не ловятся
+register_shutdown_function(function () {
+    $error = error_get_last();
+    if ($error && in_array($error['type'], [E_ERROR, E_PARSE, E_CORE_ERROR, E_COMPILE_ERROR], true) && !headers_sent()) {
+        http_response_code(500);
+        Response::error(ErrorCode::INTERNAL_ERROR);
+    }
+});
 
 $uri = strtok($_SERVER['REQUEST_URI'] ?? '', '?');
 

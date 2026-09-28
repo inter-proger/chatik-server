@@ -6,11 +6,15 @@ require_once __DIR__ . '/../core/Session.php';
 require_once __DIR__ . '/../core/ErrorCode.php';
 require_once __DIR__ . '/../core/User.php';
 
+// Максимальные длины соответствуют колонкам users.login и users.name
+const LOGIN_MAX_LENGTH = 64;
+const NAME_MAX_LENGTH  = 128;
+
 $login    = trim($_POST['login']    ?? '');
 $password = trim($_POST['password'] ?? '');
 $name     = trim($_POST['name']     ?? '');
 
-if (!preg_match('/^\w+$/', $login)) {
+if (!preg_match('/^\w+$/', $login) || strlen($login) > LOGIN_MAX_LENGTH) {
     Response::error(ErrorCode::INVALID_LOGIN);
 }
 
@@ -23,21 +27,23 @@ if (
     Response::error(ErrorCode::INVALID_PASSWORD);
 }
 
-if (!preg_match('/^[\p{L}0-9\-_ ]+$/u', $name) || $name === '') {
+if (!preg_match('/^[\p{L}0-9\-_ ]+$/u', $name) || mb_strlen($name) > NAME_MAX_LENGTH) {
     Response::error(ErrorCode::INVALID_NAME);
 }
 
 $db = DB::get();
 
-$stmt = $db->prepare('SELECT id FROM users WHERE login = ?');
-$stmt->execute([$login]);
-if ($stmt->fetch()) {
-    Response::error(ErrorCode::LOGIN_TAKEN);
-}
-
+// Занятость логина проверяет UNIQUE-ключ users.login — так нет гонки между проверкой и вставкой
 $hash = password_hash($password, PASSWORD_BCRYPT);
 $stmt = $db->prepare('INSERT INTO users (login, password_hash, name) VALUES (?, ?, ?)');
-$stmt->execute([$login, $hash, $name]);
+try {
+    $stmt->execute([$login, $hash, $name]);
+} catch (PDOException $e) {
+    if (($e->errorInfo[1] ?? null) === 1062) {
+        Response::error(ErrorCode::LOGIN_TAKEN);
+    }
+    throw $e;
+}
 $userId = (int) $db->lastInsertId();
 
 Session::start();

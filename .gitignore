@@ -10,3 +10,6 @@ storage/
 
 # Локальные настройки БД — скопируйте config/db.example.php в config/db.php
 config/db.php
+
+# Локальные настройки приложения — скопируйте config/app.example.php в config/app.php
+config/app.php
