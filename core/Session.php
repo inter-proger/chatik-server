@@ -1,6 +1,7 @@
 <?php
 
 require_once __DIR__ . '/../config/session.php';
+require_once __DIR__ . '/../config/app.php';
 
 class Session
 {
@@ -27,6 +28,8 @@ class Session
         session_set_cookie_params([
             'lifetime' => SESSION_LIFETIME,
             'path'     => '/',
+            // По HTTPS cookie только защищённая; локально (BASE_URL на http) работает как раньше
+            'secure'   => str_starts_with(BASE_URL, 'https://'),
             'httponly' => true,
             'samesite' => 'Lax',
         ]);

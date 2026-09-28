@@ -10,16 +10,23 @@ const USERS_MAX_COUNT     = 100;
 
 Auth::requireUserId();
 
-// Невалидные UTF-8 байты заменяем, иначе MySQL отклонит строку
-$query = trim(mb_scrub((string) ($_REQUEST['query'] ?? ''), 'UTF-8'));
+$query = $_REQUEST['query'] ?? '';
 $maxId = $_REQUEST['maxId'] ?? '';
 $count = $_REQUEST['count'] ?? '';
 
-if ($maxId !== '' && !ctype_digit((string) $maxId)) {
+// Параметры вида query[]=... приходят массивами
+if (!is_string($query) || !is_string($maxId) || !is_string($count)) {
     Response::error(ErrorCode::INVALID_PARAMS);
 }
 
-if ($count !== '' && (!ctype_digit((string) $count) || (int) $count <= 0)) {
+// Невалидные UTF-8 байты заменяем, иначе MySQL отклонит строку
+$query = trim(mb_scrub($query, 'UTF-8'));
+
+if ($maxId !== '' && !ctype_digit($maxId)) {
+    Response::error(ErrorCode::INVALID_PARAMS);
+}
+
+if ($count !== '' && (!ctype_digit($count) || (int) $count <= 0)) {
     Response::error(ErrorCode::INVALID_PARAMS);
 }
 
