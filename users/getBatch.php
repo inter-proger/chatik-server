@@ -33,16 +33,16 @@ $found = User::findByIds($ids);
 
 // Порядок — как в запросе
 $users       = [];
-$errorIdList = [];
+$notFoundIds = [];
 foreach ($ids as $id) {
     if (isset($found[$id])) {
         $users[] = $found[$id];
     } else {
-        $errorIdList[] = $id;
+        $notFoundIds[] = $id;
     }
 }
 
 Response::success([
     'users'       => $users,
-    'errorIdList' => $errorIdList,
+    'notFoundIds' => $notFoundIds,
 ]);

@@ -80,6 +80,18 @@ class MessagesTest extends TestCase
         $this->assertUsersAction([$this->me], $res);
     }
 
+    public function testEditSameTextKeepsMessage(): void
+    {
+        $message = $this->send($this->client, 'Hello');
+
+        $res = $this->client->post('/messages/edit', ['messageId' => $message['messageId'], 'newText' => ' Hello ']);
+
+        $this->assertSuccess($res);
+        $this->assertSame($message, $res['response']['message']);
+        $this->assertFalse(Message::findById($message['messageId'])['isEdited']);
+        $this->assertUsersAction([$this->me], $res);
+    }
+
     public function testEditOthersMessageForbidden(): void
     {
         $id = $this->send($this->bobClient, 'Hello')['messageId'];

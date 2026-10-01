@@ -1,4 +1,4 @@
--- Блоки сообщений: сообщения переписки группируются в блоки по MESSAGE_BLOCK_SIZE штук (см. core/Message.php).
+-- Блоки сообщений: сообщения переписки группируются в блоки по Message::BLOCK_SIZE штук (см. core/Message.php).
 -- Новый блок создаётся, когда последний блок переписки заполнен
 CREATE TABLE message_blocks (
     id              INT UNSIGNED NOT NULL AUTO_INCREMENT,

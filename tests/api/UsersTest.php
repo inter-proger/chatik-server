@@ -123,7 +123,7 @@ class UsersTest extends TestCase
         $this->assertSuccess($res);
         $this->assertSame(['carol', 'bob'], $this->logins($res));
         $this->assertSame(['userId' => $bob, 'login' => 'bob', 'name' => 'Bob', 'avatar' => null], $res['response']['users'][1]);
-        $this->assertSame([999], $res['response']['errorIdList']);
+        $this->assertSame([999], $res['response']['notFoundIds']);
         $this->assertFalse(array_key_exists('actions', $res));
     }
 
@@ -135,7 +135,7 @@ class UsersTest extends TestCase
 
         $this->assertSuccess($res);
         $this->assertSame(['bob'], $this->logins($res));
-        $this->assertSame([0], $res['response']['errorIdList']);
+        $this->assertSame([0], $res['response']['notFoundIds']);
     }
 
     public function testGetBatchNoneFound(): void
@@ -143,7 +143,7 @@ class UsersTest extends TestCase
         $res = $this->client->get('/users/getBatch', ['userIds' => '998, 999']);
 
         $this->assertSuccess($res);
-        $this->assertSame(['users' => [], 'errorIdList' => [998, 999]], $res['response']);
+        $this->assertSame(['users' => [], 'notFoundIds' => [998, 999]], $res['response']);
     }
 
     public function testGetBatchMax100(): void

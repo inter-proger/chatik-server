@@ -61,8 +61,9 @@ class Message
             $sql .= ' AND id <= ?';
             $params[] = $fromBlockId;
         }
-        // Пустых блоков не бывает, так что $minCount + 1 блоков точно хватит, чтобы узнать следующий
-        $sql .= ' ORDER BY id DESC LIMIT ' . ($minCount + 1);
+        // Неполным бывает только последний блок (в нём хотя бы одно сообщение), остальные полные:
+        // первый блок + ceil($minCount / BLOCK_SIZE) полных + ещё один, чтобы узнать следующий
+        $sql .= ' ORDER BY id DESC LIMIT ' . ((int) ceil($minCount / self::BLOCK_SIZE) + 2);
 
         $stmt = DB::get()->prepare($sql);
         $stmt->execute($params);
@@ -141,7 +142,8 @@ class Message
 
     /**
      * Приводит текст из запроса к виду для сохранения: невалидные UTF-8 байты заменяются,
-     * пробелы по краям обрезаются. null — если текст не строка, пустой или длиннее TEXT_MAX_LENGTH.
+     * пробелы по краям обрезаются (включая юникодные и невидимые: NBSP, zero-width, BOM).
+     * null — если текст не строка, пустой или длиннее TEXT_MAX_LENGTH.
      */
     public static function normalizeText(mixed $text): ?string
     {
@@ -149,7 +151,12 @@ class Message
             return null;
         }
 
-        $text = trim(mb_scrub($text, 'UTF-8'));
+        // Не \p{Cf} целиком: теги U+E0020–E007F в конце флагов регионов (Шотландия и т. п.) обрезать нельзя
+        $text = preg_replace(
+            '/^[\s\p{Z}\x{200B}-\x{200D}\x{2060}\x{FEFF}]+|[\s\p{Z}\x{200B}-\x{200D}\x{2060}\x{FEFF}]+$/u',
+            '',
+            mb_scrub($text, 'UTF-8')
+        );
         if ($text === '' || mb_strlen($text) > self::TEXT_MAX_LENGTH) {
             return null;
         }

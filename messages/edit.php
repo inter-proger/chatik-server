@@ -30,7 +30,10 @@ if ($text === null) {
     Response::error(ErrorCode::INVALID_TEXT);
 }
 
-$message = Message::edit($message['messageId'], $text);
+// Текст не изменился — сообщение не трогаем и отредактированным не помечаем
+if ($text !== $message['text']) {
+    $message = Message::edit($message['messageId'], $text);
+}
 
 Response::success([
     'message' => $message,

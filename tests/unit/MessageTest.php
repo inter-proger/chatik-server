@@ -115,6 +115,19 @@ class MessageTest extends TestCase
         $this->assertSame($blocks[0], $list['nextBlockId']);
     }
 
+    public function testFindListWithAlmostEmptyNewestBlock(): void
+    {
+        [$conversationId, $a] = $this->conversation();
+        // Блоки: 20, 20, 20, 1 (самый новый) — для 40 сообщений нужно 4 блока: 1 + 20 + 20 и следующий
+        $ids = $this->sendMany($conversationId, $a, 3 * Message::BLOCK_SIZE + 1);
+        $blocks = $this->blockIds();
+
+        $list = Message::findList($conversationId, null, 40);
+
+        $this->assertSame(array_reverse(array_slice($ids, Message::BLOCK_SIZE)), array_column($list['messages'], 'messageId'));
+        $this->assertSame($blocks[0], $list['nextBlockId']);
+    }
+
     public function testFindListIgnoresOtherConversations(): void
     {
         [$conversationId, $a] = $this->conversation();
@@ -141,9 +154,13 @@ class MessageTest extends TestCase
     {
         $this->assertSame('Hi', Message::normalizeText("  Hi\n"));
         $this->assertSame("a?b", Message::normalizeText("a\xFFb"));
+        $this->assertSame('Hi', Message::normalizeText("\u{00A0}\u{200B}\u{FEFF}Hi\u{3000}\u{2060}"));
+        // Теги в конце флага региона — часть эмодзи, не обрезаются
+        $flag = "\u{1F3F4}\u{E0067}\u{E0062}\u{E0073}\u{E0063}\u{E0074}\u{E007F}";
+        $this->assertSame("Hi $flag", Message::normalizeText("Hi $flag "));
         $this->assertSame(str_repeat('я', Message::TEXT_MAX_LENGTH), Message::normalizeText(str_repeat('я', Message::TEXT_MAX_LENGTH)));
 
-        foreach (['', "  \n ", str_repeat('a', Message::TEXT_MAX_LENGTH + 1), ['a'], null] as $text) {
+        foreach (['', "  \n ", "\u{00A0}\u{200B}\u{200D}", str_repeat('a', Message::TEXT_MAX_LENGTH + 1), ['a'], null] as $text) {
             $this->assertNull(Message::normalizeText($text));
         }
     }
