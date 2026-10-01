@@ -2,7 +2,6 @@
 
 require_once __DIR__ . '/DB.php';
 require_once __DIR__ . '/File.php';
-require_once __DIR__ . '/User.php';
 
 class Conversation
 {
@@ -19,10 +18,10 @@ class Conversation
 
     /**
      * Возвращает сущность переписки по id или null, если не найдена.
-     * $viewerId — пользователь, для которого собирается сущность (от него зависит opponentUser).
+     * $viewerId — пользователь, для которого собирается сущность (от него зависит opponentUserId).
      *
      * Формат: conversationId, type, memberIds, name, avatar (сущность File или null),
-     * opponentUser (сущность User собеседника для single, иначе null)
+     * opponentUserId (id собеседника для single, иначе null)
      */
     public static function findById(int $id, int $viewerId): ?array
     {
@@ -97,7 +96,7 @@ class Conversation
     }
 
     /**
-     * Собирает сущности переписок из строк запроса (см. SELECT): участники и собеседники
+     * Собирает сущности переписок из строк запроса (см. SELECT): участники
      * догружаются одним запросом на всю пачку.
      */
     private static function fromRows(array $rows, int $viewerId): array
@@ -129,11 +128,10 @@ class Conversation
                 }
             }
         }
-        $users = User::findByIds($opponentIds);
 
-        return array_map(function ($row) use ($memberIds, $opponentIds, $users) {
+        return array_map(function ($row) use ($memberIds, $opponentIds) {
             $id = (int) $row['id'];
-            return self::fromRow($row, $memberIds[$id], $users[$opponentIds[$id] ?? 0] ?? null);
+            return self::fromRow($row, $memberIds[$id], $opponentIds[$id] ?? null);
         }, $rows);
     }
 
@@ -141,7 +139,7 @@ class Conversation
      * Собирает сущность переписки из строки запроса. Колонки аватара ожидаются
      * с префиксом f_ (см. SELECT); если f_id пустой — avatar = null.
      */
-    public static function fromRow(array $row, array $memberIds, ?array $opponentUser): array
+    public static function fromRow(array $row, array $memberIds, ?int $opponentUserId): array
     {
         $avatar = null;
         if (!empty($row['f_id'])) {
@@ -162,7 +160,7 @@ class Conversation
             'memberIds'      => $memberIds,
             'name'           => $row['name'],
             'avatar'         => $avatar,
-            'opponentUser'   => $opponentUser,
+            'opponentUserId' => $opponentUserId,
         ];
     }
 

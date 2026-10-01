@@ -27,7 +27,7 @@ class ConversationsTest extends TestCase
             'memberIds'      => [$this->me, $bob],
             'name'           => null,
             'avatar'         => null,
-            'opponentUser'   => ['userId' => $bob, 'login' => 'bob', 'name' => 'Bob', 'avatar' => null],
+            'opponentUserId' => $bob,
         ], $res['response']['conversation']);
         $this->assertUsersAction([$this->me, $bob], $res);
     }
@@ -42,7 +42,7 @@ class ConversationsTest extends TestCase
 
         $this->assertSame($mine, $again);
         $this->assertSame($mine['conversationId'], $theirs['conversationId']);
-        $this->assertSame('me', $theirs['opponentUser']['login']);
+        $this->assertSame($this->me, $theirs['opponentUserId']);
     }
 
     public function testCreateSingleWithSelf(): void
@@ -90,10 +90,7 @@ class ConversationsTest extends TestCase
 
         $res = $this->client->get('/conversations/getList');
 
-        $this->assertSame(['carol', 'bob'], array_map(
-            fn($c) => $c['opponentUser']['login'],
-            $res['response']['conversations']
-        ));
+        $this->assertSame([$carol, $bob], array_column($res['response']['conversations'], 'opponentUserId'));
         $this->assertFalse($res['response']['hasNext']);
         // dave в выдачу не попал — его переписки с bob в выдаче нет
         $this->assertUsersAction([$this->me, $bob, $carol], $res);
@@ -101,18 +98,20 @@ class ConversationsTest extends TestCase
 
     public function testGetListPagination(): void
     {
+        $ids = [];
         foreach (['a', 'b', 'c'] as $login) {
-            $this->client->post('/conversations/createSingle', ['userId' => $this->insertUser($login)]);
+            $ids[$login] = $this->insertUser($login);
+            $this->client->post('/conversations/createSingle', ['userId' => $ids[$login]]);
         }
 
-        $opponents = fn($res) => array_map(fn($c) => $c['opponentUser']['login'], $res['response']['conversations']);
+        $opponents = fn($res) => array_column($res['response']['conversations'], 'opponentUserId');
 
         $page1 = $this->client->post('/conversations/getList', ['count' => 2]);
-        $this->assertSame(['c', 'b'], $opponents($page1));
+        $this->assertSame([$ids['c'], $ids['b']], $opponents($page1));
         $this->assertTrue($page1['response']['hasNext']);
 
         $page2 = $this->client->post('/conversations/getList', ['count' => 2, 'offset' => 2]);
-        $this->assertSame(['a'], $opponents($page2));
+        $this->assertSame([$ids['a']], $opponents($page2));
         $this->assertFalse($page2['response']['hasNext']);
 
         $this->assertSame([], $this->client->post('/conversations/getList', ['offset' => 10])['response']['conversations']);

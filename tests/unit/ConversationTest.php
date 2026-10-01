@@ -18,7 +18,7 @@ class ConversationTest extends TestCase
             'memberIds'      => [1, 2],
             'name'           => 'Team',
             'avatar'         => null,
-            'opponentUser'   => null,
+            'opponentUserId' => null,
         ], $conversation);
     }
 
@@ -42,7 +42,7 @@ class ConversationTest extends TestCase
 
         $this->assertSame('single', $conversation['type']);
         $this->assertSame([$a, $b], $conversation['memberIds']);
-        $this->assertSame($a, $conversation['opponentUser']['userId']);
+        $this->assertSame($a, $conversation['opponentUserId']);
         $this->assertNull($conversation['name']);
 
         $key = DB::get()->query('SELECT single_key FROM conversations')->fetchColumn();
@@ -58,8 +58,8 @@ class ConversationTest extends TestCase
         $second = Conversation::findOrCreateSingle($b, $a);
 
         $this->assertSame($first['conversationId'], $second['conversationId']);
-        $this->assertSame($b, $first['opponentUser']['userId']);
-        $this->assertSame($a, $second['opponentUser']['userId']);
+        $this->assertSame($b, $first['opponentUserId']);
+        $this->assertSame($a, $second['opponentUserId']);
         $this->assertSame('1', (string) DB::get()->query('SELECT COUNT(*) FROM conversations')->fetchColumn());
     }
 
@@ -76,7 +76,7 @@ class ConversationTest extends TestCase
         $id = Conversation::findOrCreateSingle($a, $b)['conversationId'];
 
         // Для постороннего собеседник — первый участник, отличный от него
-        $this->assertSame($a, Conversation::findById($id, $c)['opponentUser']['userId']);
+        $this->assertSame($a, Conversation::findById($id, $c)['opponentUserId']);
     }
 
     public function testFindListByMemberOnlyOwnNewestFirst(): void
@@ -91,7 +91,7 @@ class ConversationTest extends TestCase
 
         $list = Conversation::findListByMember($a, 0, 10);
         $this->assertSame([$ac, $ab], array_column($list, 'conversationId'));
-        $this->assertSame([$c, $b], array_map(fn($conv) => $conv['opponentUser']['userId'], $list));
+        $this->assertSame([$c, $b], array_column($list, 'opponentUserId'));
 
         $this->assertSame([$ab], array_column(Conversation::findListByMember($b, 1, 1), 'conversationId'));
     }
@@ -113,6 +113,6 @@ class ConversationTest extends TestCase
 
         $this->assertSame('Team', $conversation['name']);
         $this->assertSame([$a], $conversation['memberIds']);
-        $this->assertNull($conversation['opponentUser']);
+        $this->assertNull($conversation['opponentUserId']);
     }
 }

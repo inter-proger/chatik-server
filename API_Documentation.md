@@ -140,7 +140,7 @@ Action — указание клиенту, которое приходит в �
 | `memberIds`      | Int[]        | Идентификаторы пользователей, состоящих в переписке (по возрастанию)     |
 | `name`           | String \| null | Название — только для `group`; для `single` всегда `null`             |
 | `avatar`         | File \| null   | Аватар — объект [File](#объект-file) типа `image`; только для `group`, опционально; для `single` всегда `null` |
-| `opponentUser`   | User \| null   | Собеседник — объект [User](#объект-user); только для `single` (второй участник относительно текущего пользователя); для `group` всегда `null` |
+| `opponentUserId` | Int \| null   | Идентификатор собеседника — только для `single` (второй участник относительно текущего пользователя); для `group` всегда `null`. Сам пользователь запрашивается через [`/users/getBatch`](#get-usersgetbatch--пользователи-по-списку-id) по [action `users`](#action-users) |
 
 ```json
 {
@@ -149,12 +149,7 @@ Action — указание клиенту, которое приходит в �
   "memberIds": [1, 2],
   "name": null,
   "avatar": null,
-  "opponentUser": {
-    "userId": 2,
-    "login": "petr",
-    "name": "Petr Sidorov",
-    "avatar": null
-  }
+  "opponentUserId": 2
 }
 ```
 
@@ -618,12 +613,7 @@ Action — указание клиенту, которое приходит в �
       "memberIds": [1, 2],
       "name": null,
       "avatar": null,
-      "opponentUser": {
-        "userId": 2,
-        "login": "petr",
-        "name": "Petr Sidorov",
-        "avatar": null
-      }
+      "opponentUserId": 2
     }
   },
   "actions": [
@@ -675,12 +665,7 @@ Action — указание клиенту, которое приходит в �
         "memberIds": [1, 2],
         "name": null,
         "avatar": null,
-        "opponentUser": {
-          "userId": 2,
-          "login": "petr",
-          "name": "Petr Sidorov",
-          "avatar": null
-        }
+        "opponentUserId": 2
       }
     ],
     "hasNext": false
