@@ -3,6 +3,7 @@
 require_once __DIR__ . '/../core/Auth.php';
 require_once __DIR__ . '/../core/Conversation.php';
 require_once __DIR__ . '/../core/Message.php';
+require_once __DIR__ . '/../core/Action.php';
 require_once __DIR__ . '/../core/Response.php';
 require_once __DIR__ . '/../core/ErrorCode.php';
 
@@ -21,6 +22,10 @@ if ($conversationId === null || !Conversation::isMember($conversationId, $userId
     Response::error(ErrorCode::MESSAGE_BLOCK_NOT_FOUND);
 }
 
+$messages = Message::findByBlock($blockId);
+
 Response::success([
-    'messages' => Message::findByBlock($blockId),
+    'messages' => $messages,
+], [
+    Action::users(array_column($messages, 'senderId')),
 ]);

@@ -2,6 +2,7 @@
 
 require_once __DIR__ . '/../core/Auth.php';
 require_once __DIR__ . '/../core/Conversation.php';
+require_once __DIR__ . '/../core/Action.php';
 require_once __DIR__ . '/../core/Response.php';
 require_once __DIR__ . '/../core/ErrorCode.php';
 
@@ -27,8 +28,11 @@ $count  = $count === '' ? CONVERSATIONS_DEFAULT_COUNT : min((int) $count, CONVER
 // Берём на одну больше, чтобы узнать, есть ли следующая страница
 $conversations = Conversation::findListByMember($userId, $offset, $count + 1);
 $hasNext = count($conversations) > $count;
+$conversations = array_slice($conversations, 0, $count);
 
 Response::success([
-    'conversations' => array_slice($conversations, 0, $count),
+    'conversations' => $conversations,
     'hasNext'       => $hasNext,
+], [
+    Action::users(array_merge([], ...array_column($conversations, 'memberIds'))),
 ]);

@@ -29,6 +29,7 @@ class ConversationsTest extends TestCase
             'avatar'         => null,
             'opponentUser'   => ['userId' => $bob, 'login' => 'bob', 'name' => 'Bob', 'avatar' => null],
         ], $res['response']['conversation']);
+        $this->assertUsersAction([$this->me, $bob], $res);
     }
 
     public function testCreateSingleIsIdempotentForBothSides(): void
@@ -74,6 +75,7 @@ class ConversationsTest extends TestCase
 
         $this->assertSuccess($res);
         $this->assertSame(['conversations' => [], 'hasNext' => false], $res['response']);
+        $this->assertFalse(array_key_exists('actions', $res));
     }
 
     public function testGetListNewestFirstOnlyOwn(): void
@@ -93,6 +95,8 @@ class ConversationsTest extends TestCase
             $res['response']['conversations']
         ));
         $this->assertFalse($res['response']['hasNext']);
+        // dave в выдачу не попал — его переписки с bob в выдаче нет
+        $this->assertUsersAction([$this->me, $bob, $carol], $res);
     }
 
     public function testGetListPagination(): void

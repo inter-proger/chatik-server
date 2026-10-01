@@ -3,6 +3,7 @@
 require_once __DIR__ . '/../core/Auth.php';
 require_once __DIR__ . '/../core/Conversation.php';
 require_once __DIR__ . '/../core/Message.php';
+require_once __DIR__ . '/../core/Action.php';
 require_once __DIR__ . '/../core/Response.php';
 require_once __DIR__ . '/../core/ErrorCode.php';
 
@@ -20,6 +21,10 @@ if ($text === null) {
     Response::error(ErrorCode::INVALID_TEXT);
 }
 
+$message = Message::send((int) $conversationId, $userId, $text);
+
 Response::success([
-    'message' => Message::send((int) $conversationId, $userId, $text),
+    'message' => $message,
+], [
+    Action::users([$message['senderId']]),
 ]);

@@ -132,6 +132,13 @@ abstract class TestCase
         }
     }
 
+    /** В ответе ровно один action — users с указанными id (по возрастанию). */
+    protected function assertUsersAction(array $userIds, array $res): void
+    {
+        sort($userIds);
+        $this->assertSame([['type' => 'users', 'data' => ['userIds' => $userIds]]], $res['actions'] ?? null, 'Unexpected actions');
+    }
+
     protected function fail(string $message): never
     {
         throw new AssertionFailed($message);

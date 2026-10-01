@@ -2,10 +2,21 @@
 
 class Response
 {
-    public static function success(array $data = []): void
+    /**
+     * @param array $actions список actions (см. core/Action.php); null-элементы пропускаются,
+     *                       при пустом списке поле actions в ответ не попадает
+     */
+    public static function success(array $data = [], array $actions = []): void
     {
         // Пустой массив сериализуется в [], а не в {} — приводим к объекту
-        self::send(['status' => 1, 'response' => (object) $data]);
+        $payload = ['status' => 1, 'response' => (object) $data];
+
+        $actions = array_values(array_filter($actions));
+        if ($actions) {
+            $payload['actions'] = $actions;
+        }
+
+        self::send($payload);
     }
 
     public static function error(int $code): void

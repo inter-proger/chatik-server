@@ -34,6 +34,7 @@ $routes = [
     '/files/uploadImage' => __DIR__ . '/files/uploadImage.php',
     '/files/get'   => __DIR__ . '/files/get.php',
     '/users/getList' => __DIR__ . '/users/getList.php',
+    '/users/getBatch' => __DIR__ . '/users/getBatch.php',
     '/conversations/createSingle' => __DIR__ . '/conversations/createSingle.php',
     '/conversations/getList' => __DIR__ . '/conversations/getList.php',
     '/messages/getList' => __DIR__ . '/messages/getList.php',

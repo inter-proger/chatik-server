@@ -110,4 +110,62 @@ class UsersTest extends TestCase
     {
         $this->assertError(ErrorCode::NOT_AUTHENTICATED, $this->client()->get('/users/getList'));
     }
+
+    // ---- /users/getBatch ----
+
+    public function testGetBatch(): void
+    {
+        $bob   = $this->insertUser('bob', 'Bob');
+        $carol = $this->insertUser('carol', 'Carol');
+
+        $res = $this->client->post('/users/getBatch', ['userIds' => "$carol,999,$bob,$carol"]);
+
+        $this->assertSuccess($res);
+        $this->assertSame(['carol', 'bob'], $this->logins($res));
+        $this->assertSame(['userId' => $bob, 'login' => 'bob', 'name' => 'Bob', 'avatar' => null], $res['response']['users'][1]);
+        $this->assertSame([999], $res['response']['errorIdList']);
+        $this->assertFalse(array_key_exists('actions', $res));
+    }
+
+    public function testGetBatchArrayParam(): void
+    {
+        $bob = $this->insertUser('bob');
+
+        $res = $this->client->get('/users/getBatch', ['userIds' => [(string) $bob, '0']]);
+
+        $this->assertSuccess($res);
+        $this->assertSame(['bob'], $this->logins($res));
+        $this->assertSame([0], $res['response']['errorIdList']);
+    }
+
+    public function testGetBatchNoneFound(): void
+    {
+        $res = $this->client->get('/users/getBatch', ['userIds' => '998, 999']);
+
+        $this->assertSuccess($res);
+        $this->assertSame(['users' => [], 'errorIdList' => [998, 999]], $res['response']);
+    }
+
+    public function testGetBatchMax100(): void
+    {
+        $ids = range(1, 100);
+        $this->assertSuccess($this->client->post('/users/getBatch', ['userIds' => implode(',', $ids)]));
+
+        $ids[] = 101;
+        $this->assertError(ErrorCode::INVALID_PARAMS, $this->client->post('/users/getBatch', ['userIds' => implode(',', $ids)]));
+        $this->assertError(ErrorCode::INVALID_PARAMS, $this->client->post('/users/getBatch', ['userIds' => $ids]));
+    }
+
+    public function testGetBatchInvalidParams(): void
+    {
+        $invalid = [[], ['userIds' => ''], ['userIds' => 'abc'], ['userIds' => '1,,2'], ['userIds' => '1,-2'], ['userIds' => [['1']]]];
+        foreach ($invalid as $params) {
+            $this->assertError(ErrorCode::INVALID_PARAMS, $this->client->get('/users/getBatch', $params));
+        }
+    }
+
+    public function testGetBatchNotAuthenticated(): void
+    {
+        $this->assertError(ErrorCode::NOT_AUTHENTICATED, $this->client()->get('/users/getBatch', ['userIds' => '1']));
+    }
 }

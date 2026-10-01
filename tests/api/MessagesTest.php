@@ -35,6 +35,7 @@ class MessagesTest extends TestCase
         $this->assertSame('text', $message['type']);
         $this->assertSame('Hello', $message['text']);
         $this->assertFalse($message['isEdited']);
+        $this->assertUsersAction([$this->me], $res);
     }
 
     public function testSendInvalidText(): void
@@ -76,6 +77,7 @@ class MessagesTest extends TestCase
         $this->assertSame(Message::findById($id), $message);
         $this->assertSame('Bye', $message['text']);
         $this->assertTrue($message['isEdited']);
+        $this->assertUsersAction([$this->me], $res);
     }
 
     public function testEditOthersMessageForbidden(): void
@@ -125,6 +127,19 @@ class MessagesTest extends TestCase
 
         $this->assertSuccess($res);
         $this->assertSame(['messages' => [], 'nextBlockId' => null, 'hasNext' => false], $res['response']);
+        $this->assertFalse(array_key_exists('actions', $res));
+    }
+
+    public function testGetListUsersAction(): void
+    {
+        $this->send($this->client, 'Hi');
+        $this->send($this->bobClient, 'Hello');
+        $this->send($this->client, 'How are you?');
+
+        $res = $this->client->get('/messages/getList', ['conversationId' => $this->conversationId]);
+
+        $this->assertSuccess($res);
+        $this->assertUsersAction([$this->me, $this->bob], $res);
     }
 
     public function testGetListPagination(): void
@@ -187,6 +202,7 @@ class MessagesTest extends TestCase
         $this->assertSuccess($res);
         $this->assertSame(array_reverse(array_slice($ids, 0, Message::BLOCK_SIZE)), array_column($res['response']['messages'], 'messageId'));
         $this->assertSame(Message::findById($ids[0]), end($res['response']['messages']));
+        $this->assertUsersAction([$this->me, $this->bob], $res);
     }
 
     public function testGetBlockNotFound(): void
