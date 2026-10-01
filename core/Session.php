@@ -1,7 +1,8 @@
 <?php
 
 require_once __DIR__ . '/../config/session.php';
-require_once __DIR__ . '/../config/app.php';
+require_once __DIR__ . '/../config/local.php';
+require_once LOCAL_CONFIG_DIR . '/app.php';
 
 class Session
 {

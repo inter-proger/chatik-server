@@ -4,7 +4,8 @@ require_once __DIR__ . '/DB.php';
 require_once __DIR__ . '/Response.php';
 require_once __DIR__ . '/ErrorCode.php';
 require_once __DIR__ . '/../config/files.php';
-require_once __DIR__ . '/../config/app.php';
+require_once __DIR__ . '/../config/local.php';
+require_once LOCAL_CONFIG_DIR . '/app.php';
 
 class File
 {
