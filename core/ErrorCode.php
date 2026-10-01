@@ -7,6 +7,7 @@ class ErrorCode
     const INVALID_PASSWORD = 1002;
     const INVALID_NAME     = 1003;
     const INVALID_PARAMS   = 1004;
+    const INVALID_TEXT     = 1005;
 
     // Auth
     const LOGIN_TAKEN      = 2001;
@@ -25,6 +26,12 @@ class ErrorCode
 
     // Conversations
     const CONVERSATION_WITH_SELF = 5001;
+    const CONVERSATION_NOT_FOUND = 5002;
+
+    // Messages
+    const MESSAGE_NOT_FOUND       = 6001;
+    const MESSAGE_BLOCK_NOT_FOUND = 6002;
+    const MESSAGE_EDIT_FORBIDDEN  = 6003;
 
     // Server
     const INTERNAL_ERROR    = 9001;

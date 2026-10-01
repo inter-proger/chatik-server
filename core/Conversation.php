@@ -49,6 +49,15 @@ class Conversation
         return self::fromRows($stmt->fetchAll(), $userId);
     }
 
+    /** Состоит ли пользователь в переписке. Для несуществующей переписки — false. */
+    public static function isMember(int $conversationId, int $userId): bool
+    {
+        $stmt = DB::get()->prepare('SELECT 1 FROM conversation_members WHERE conversation_id = ? AND user_id = ?');
+        $stmt->execute([$conversationId, $userId]);
+
+        return $stmt->fetchColumn() !== false;
+    }
+
     /**
      * Возвращает личную переписку между двумя пользователями,
      * создавая её, если её ещё нет.

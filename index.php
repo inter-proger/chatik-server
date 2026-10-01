@@ -36,6 +36,10 @@ $routes = [
     '/users/getList' => __DIR__ . '/users/getList.php',
     '/conversations/createSingle' => __DIR__ . '/conversations/createSingle.php',
     '/conversations/getList' => __DIR__ . '/conversations/getList.php',
+    '/messages/getList' => __DIR__ . '/messages/getList.php',
+    '/messages/getBlock' => __DIR__ . '/messages/getBlock.php',
+    '/messages/send' => __DIR__ . '/messages/send.php',
+    '/messages/edit' => __DIR__ . '/messages/edit.php',
 ];
 
 if (!isset($routes[$uri])) {

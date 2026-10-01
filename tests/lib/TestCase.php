@@ -39,7 +39,7 @@ abstract class TestCase
         }
 
         $db->exec('SET FOREIGN_KEY_CHECKS = 0');
-        foreach (['conversation_members', 'conversations', 'files', 'users'] as $table) {
+        foreach (['messages', 'message_blocks', 'conversation_members', 'conversations', 'files', 'users'] as $table) {
             $db->exec("TRUNCATE TABLE $table");
         }
         $db->exec('SET FOREIGN_KEY_CHECKS = 1');
