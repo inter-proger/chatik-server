@@ -7,7 +7,7 @@ class ConversationTest extends TestCase
     public function testFromRow(): void
     {
         $conversation = Conversation::fromRow(
-            ['id' => '3', 'type' => 'group', 'name' => 'Team', 'f_id' => null],
+            ['id' => '3', 'type' => 'group', 'name' => 'Team', 'updated_at' => '1790846400', 'f_id' => null],
             [1, 2],
             null
         );
@@ -19,13 +19,14 @@ class ConversationTest extends TestCase
             'name'           => 'Team',
             'avatar'         => null,
             'opponentUserId' => null,
+            'updatedAt'      => 1790846400,
         ], $conversation);
     }
 
     public function testFromRowWithAvatar(): void
     {
         $conversation = Conversation::fromRow([
-            'id' => 3, 'type' => 'group', 'name' => 'Team',
+            'id' => 3, 'type' => 'group', 'name' => 'Team', 'updated_at' => 1790846400,
             'f_id' => 4, 'f_type' => 'image', 'f_path' => 'static/uploads/g.png', 'f_size' => 1,
             'f_filename' => 'g.png', 'f_extension' => 'png', 'f_data' => '{}',
         ], [], null);
@@ -38,8 +39,9 @@ class ConversationTest extends TestCase
         $a = $this->insertUser('a');
         $b = $this->insertUser('b');
 
-        $conversation = Conversation::findOrCreateSingle($b, $a);
+        $conversation = Conversation::findOrCreateSingle($b, $a, $created);
 
+        $this->assertTrue($created);
         $this->assertSame('single', $conversation['type']);
         $this->assertSame([$a, $b], $conversation['memberIds']);
         $this->assertSame($a, $conversation['opponentUserId']);
@@ -55,12 +57,33 @@ class ConversationTest extends TestCase
         $b = $this->insertUser('b');
 
         $first  = Conversation::findOrCreateSingle($a, $b);
-        $second = Conversation::findOrCreateSingle($b, $a);
+        $second = Conversation::findOrCreateSingle($b, $a, $created);
 
+        $this->assertFalse($created);
         $this->assertSame($first['conversationId'], $second['conversationId']);
         $this->assertSame($b, $first['opponentUserId']);
         $this->assertSame($a, $second['opponentUserId']);
         $this->assertSame('1', (string) DB::get()->query('SELECT COUNT(*) FROM conversations')->fetchColumn());
+    }
+
+    public function testUpdatedAtFromDatabase(): void
+    {
+        $a  = $this->insertUser('a');
+        $b  = $this->insertUser('b');
+        $id = Conversation::findOrCreateSingle($a, $b)['conversationId'];
+        DB::get()->exec("UPDATE conversations SET updated_at = FROM_UNIXTIME(1790846400) WHERE id = $id");
+
+        $this->assertSame(1790846400, Conversation::findById($id, $a)['updatedAt']);
+    }
+
+    public function testFindMemberIds(): void
+    {
+        $a  = $this->insertUser('a');
+        $b  = $this->insertUser('b');
+        $id = Conversation::findOrCreateSingle($b, $a)['conversationId'];
+
+        $this->assertSame([$a, $b], Conversation::findMemberIds($id));
+        $this->assertSame([], Conversation::findMemberIds(42));
     }
 
     public function testFindByIdMissing(): void

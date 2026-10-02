@@ -15,8 +15,27 @@ class Auth
     {
         Session::start();
 
-        if (empty($_SESSION['user_id'])) {
+        $userId = self::currentUserId();
+        if ($userId === null) {
             Response::error(ErrorCode::NOT_AUTHENTICATED);
+        }
+
+        return $userId;
+    }
+
+    /**
+     * id авторизованного пользователя или null. Для авторизованного продлевает сессию.
+     * Без cookie сессии сессию не стартует — чтобы не создавать пустых сессий для анонимов.
+     */
+    public static function currentUserId(): ?int
+    {
+        if (!isset($_COOKIE[session_name()])) {
+            return null;
+        }
+        Session::start();
+
+        if (empty($_SESSION['user_id'])) {
+            return null;
         }
 
         $userId = (int) $_SESSION['user_id'];
@@ -26,7 +45,7 @@ class Auth
         if ($stmt->fetchColumn() === false) {
             // Сессия ссылается на удалённого пользователя — сбрасываем её
             $_SESSION = [];
-            Response::error(ErrorCode::NOT_AUTHENTICATED);
+            return null;
         }
 
         return $userId;

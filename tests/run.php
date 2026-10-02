@@ -4,12 +4,36 @@
  * Запуск тестов: php tests/run.php [фильтр]
  *
  * Пересоздаёт тестовую БД (tests/config/db.php) из миграций db/*.sql, поднимает встроенный
- * PHP-сервер с тестовым конфигом и прогоняет все классы *Test из tests/unit и tests/api.
+ * PHP-сервер и WebSocket-сервер с тестовым конфигом и прогоняет все классы *Test из tests/unit и tests/api.
  * Фильтр — подстрока в имени "Класс::метод".
  */
 
 $root = dirname(__DIR__);
 putenv('SERVERAI_CONFIG_DIR=' . __DIR__ . '/config');
+
+function freePort(): int
+{
+    $sock = stream_socket_server('tcp://127.0.0.1:0');
+    $port = (int) substr(strrchr(stream_socket_get_name($sock, false), ':'), 1);
+    fclose($sock);
+
+    return $port;
+}
+
+function waitForPort(int $port): void
+{
+    for ($i = 0; $i < 100; $i++) {
+        if ($conn = @fsockopen('127.0.0.1', $port)) {
+            fclose($conn);
+            return;
+        }
+        usleep(50_000);
+    }
+}
+
+// Порты WS-сервера читает tests/config/app.php — до его подключения
+putenv('SERVERAI_TEST_WS_PORT=' . freePort());
+putenv('SERVERAI_TEST_WS_INTERNAL_PORT=' . freePort());
 
 require_once __DIR__ . '/lib/TestCase.php';
 
@@ -39,9 +63,7 @@ $server = null;
 
 // ---- HTTP-сервер ----
 
-$sock = stream_socket_server('tcp://127.0.0.1:0');
-$port = (int) substr(strrchr(stream_socket_get_name($sock, false), ':'), 1);
-fclose($sock);
+$port = freePort();
 
 $serverLog = tempnam(sys_get_temp_dir(), 'serverai-test-log-');
 $process = proc_open(
@@ -59,18 +81,32 @@ $process = proc_open(
     getenv() + ['PHP_CLI_SERVER_WORKERS' => '1']
 );
 
-register_shutdown_function(function () use ($process) {
-    proc_terminate($process);
-    proc_close($process);
+// WebSocket-сервер с короткими таймаутами (чтобы тесты на них не ждали по 10–60 секунд) и малыми лимитами
+$wsProcess = proc_open(
+    [
+        PHP_BINARY,
+        '-d', 'display_errors=0',
+        '-d', 'log_errors=1',
+        'websocket/server.php',
+        '--auth-timeout=' . TestCase::WS_AUTH_TIMEOUT,
+        '--idle-timeout=' . TestCase::WS_IDLE_TIMEOUT,
+        '--max-connections=' . TestCase::WS_MAX_CONNECTIONS,
+        '--max-output-buffer=' . TestCase::WS_MAX_OUTPUT_BUFFER,
+    ],
+    [0 => ['pipe', 'r'], 1 => ['file', $serverLog, 'a'], 2 => ['file', $serverLog, 'a']],
+    $wsPipes,
+    $root
+);
+
+register_shutdown_function(function () use ($process, $wsProcess) {
+    foreach ([$process, $wsProcess] as $proc) {
+        proc_terminate($proc);
+        proc_close($proc);
+    }
 });
 
-for ($i = 0; $i < 100; $i++) {
-    if ($conn = @fsockopen('127.0.0.1', $port)) {
-        fclose($conn);
-        break;
-    }
-    usleep(50_000);
-}
+waitForPort($port);
+waitForPort((int) getenv('SERVERAI_TEST_WS_PORT'));
 TestCase::$baseUrl = "http://127.0.0.1:$port";
 
 // ---- Тесты ----

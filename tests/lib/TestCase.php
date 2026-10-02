@@ -3,6 +3,7 @@
 require_once __DIR__ . '/AssertionFailed.php';
 require_once __DIR__ . '/ApiClient.php';
 require_once __DIR__ . '/Fixtures.php';
+require_once __DIR__ . '/WsClient.php';
 require_once __DIR__ . '/../../core/DB.php';
 require_once __DIR__ . '/../../core/File.php';
 
@@ -15,6 +16,15 @@ abstract class TestCase
     /** Адрес тестового сервера, выставляется раннером */
     public static string $baseUrl = '';
 
+    /** Таймауты тестового WS-сервера, секунд, и его лимиты (передаются ему раннером) */
+    const WS_AUTH_TIMEOUT      = 1;
+    const WS_IDLE_TIMEOUT      = 2;
+    const WS_MAX_CONNECTIONS   = 10;
+    const WS_MAX_OUTPUT_BUFFER = 64 * 1024;
+
+    /** @var WsClient[] открытые в тесте WS-соединения — закрываются в tearDown */
+    private array $wsClients = [];
+
     public function setUp(): void
     {
         self::resetDatabase();
@@ -22,6 +32,10 @@ abstract class TestCase
 
     public function tearDown(): void
     {
+        foreach ($this->wsClients as $ws) {
+            $ws->disconnect();
+        }
+        $this->wsClients = [];
     }
 
     public static function resetDatabase(): void
@@ -39,7 +53,7 @@ abstract class TestCase
         }
 
         $db->exec('SET FOREIGN_KEY_CHECKS = 0');
-        foreach (['messages', 'message_blocks', 'conversation_members', 'conversations', 'files', 'users'] as $table) {
+        foreach (['websocket_tokens', 'messages', 'message_blocks', 'conversation_members', 'conversations', 'files', 'users'] as $table) {
             $db->exec("TRUNCATE TABLE $table");
         }
         $db->exec('SET FOREIGN_KEY_CHECKS = 1');
@@ -79,6 +93,31 @@ abstract class TestCase
         $stmt->execute([$userId, $type, 'static/uploads/x.png', 123, 'x.png', 'png', json_encode($data)]);
 
         return (int) DB::get()->lastInsertId();
+    }
+
+    /** Открывает WS-соединение (без авторизации). */
+    protected function ws(): WsClient
+    {
+        return $this->wsClients[] = new WsClient(WEBSOCKET_URL);
+    }
+
+    /** Токен подключения через /global/getWebsocketToken */
+    protected function wsToken(ApiClient $client): string
+    {
+        $res = $client->get('/global/getWebsocketToken');
+        $this->assertSuccess($res);
+
+        return $res['response']['websocketConnectInfo']['token'];
+    }
+
+    /** Открывает WS-соединение и авторизует его токеном пользователя клиента. */
+    protected function wsConnect(ApiClient $client, int $userId): WsClient
+    {
+        $ws = $this->ws();
+        $ws->send('auth', 'connect', ['userId' => $userId, 'token' => $this->wsToken($client)]);
+        $this->assertEvent('auth', 'connected', [], $ws->receive());
+
+        return $ws;
     }
 
     // ---- Проверки ----
@@ -137,6 +176,24 @@ abstract class TestCase
     {
         sort($userIds);
         $this->assertSame([['type' => 'users', 'data' => ['userIds' => $userIds]]], $res['actions'] ?? null, 'Unexpected actions');
+    }
+
+    /** Сообщение сервера — событие group / event с указанным body (и userIds, если передан). */
+    protected function assertEvent(string $group, string $event, array $body, ?array $message, ?array $userIds = null): void
+    {
+        $this->assertTrue(is_array($message), 'Expected event ' . "$group/$event" . ', got nothing');
+        $this->assertTrue(is_string($message['uid'] ?? null) && preg_match('/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/', $message['uid']) === 1, 'Event uid is not UUID v4');
+        $expected = ['group' => $group, 'event' => $event, 'body' => $body] + ($userIds !== null ? ['userIds' => $userIds] : []);
+        unset($message['uid']);
+        $this->assertSame($expected, $message, 'Unexpected event');
+    }
+
+    /** Сервер закрыл соединение с кодом $code. */
+    protected function assertClosed(int $code, WsClient $ws): void
+    {
+        $message = $ws->receive();
+        $this->assertNull($message, 'Expected close, got message: ' . self::export($message));
+        $this->assertSame($code, $ws->closeCode, 'Unexpected close code');
     }
 
     protected function fail(string $message): never

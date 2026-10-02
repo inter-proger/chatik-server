@@ -3,12 +3,15 @@
 require_once __DIR__ . '/../core/Response.php';
 require_once __DIR__ . '/../core/Session.php';
 require_once __DIR__ . '/../core/ErrorCode.php';
+require_once __DIR__ . '/../core/WebSocket.php';
 
 Session::start();
 
 if (empty($_SESSION['user_id'])) {
     Response::error(ErrorCode::NOT_AUTHENTICATED);
 }
+
+WebSocket::endSession(session_id());
 
 $_SESSION = [];
 

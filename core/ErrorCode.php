@@ -13,6 +13,7 @@ class ErrorCode
     const LOGIN_TAKEN      = 2001;
     const WRONG_CREDENTIALS = 2002;
     const NOT_AUTHENTICATED = 2003;
+    const WS_TOKEN_INVALID  = 2004;
 
     // Files
     const FILE_MISSING      = 3001;

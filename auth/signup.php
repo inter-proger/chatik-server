@@ -5,6 +5,7 @@ require_once __DIR__ . '/../core/Response.php';
 require_once __DIR__ . '/../core/Session.php';
 require_once __DIR__ . '/../core/ErrorCode.php';
 require_once __DIR__ . '/../core/User.php';
+require_once __DIR__ . '/../core/WebSocket.php';
 
 // Максимальные длины соответствуют колонкам users.login и users.name
 const LOGIN_MAX_LENGTH = 64;
@@ -47,7 +48,12 @@ try {
 $userId = (int) $db->lastInsertId();
 
 Session::start();
+// Старая сессия уничтожается — отзываем её токены и закрываем её WS-соединения
+$oldSessionId = !empty($_SESSION['user_id']) ? session_id() : null;
 session_regenerate_id(true);
+if ($oldSessionId !== null) {
+    WebSocket::endSession($oldSessionId);
+}
 $_SESSION['user_id'] = $userId;
 $_SESSION['name']    = $name;
 

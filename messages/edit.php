@@ -6,6 +6,7 @@ require_once __DIR__ . '/../core/Message.php';
 require_once __DIR__ . '/../core/Action.php';
 require_once __DIR__ . '/../core/Response.php';
 require_once __DIR__ . '/../core/ErrorCode.php';
+require_once __DIR__ . '/../core/WebSocket.php';
 
 $userId = Auth::requireUserId();
 
@@ -33,6 +34,11 @@ if ($text === null) {
 // Текст не изменился — сообщение не трогаем и отредактированным не помечаем
 if ($text !== $message['text']) {
     $message = Message::edit($message['messageId'], $text);
+
+    WebSocket::publish(
+        Conversation::findMemberIds($message['conversationId']), 'messages', 'edited',
+        ['message' => $message], [$message['senderId']]
+    );
 }
 
 Response::success([

@@ -10,7 +10,7 @@ class Conversation
 
     /** Выборка переписки вместе с файлом аватара (колонки файла с префиксом f_) */
     private const SELECT =
-        'SELECT c.id, c.type, c.name,
+        'SELECT c.id, c.type, c.name, UNIX_TIMESTAMP(c.updated_at) AS updated_at,
                 f.id AS f_id, f.type AS f_type, f.path AS f_path, f.size AS f_size,
                 f.filename AS f_filename, f.extension AS f_extension, f.data AS f_data
          FROM conversations c
@@ -21,7 +21,7 @@ class Conversation
      * $viewerId — пользователь, для которого собирается сущность (от него зависит opponentUserId).
      *
      * Формат: conversationId, type, memberIds, name, avatar (сущность File или null),
-     * opponentUserId (id собеседника для single, иначе null)
+     * opponentUserId (id собеседника для single, иначе null), updatedAt
      */
     public static function findById(int $id, int $viewerId): ?array
     {
@@ -48,6 +48,15 @@ class Conversation
         return self::fromRows($stmt->fetchAll(), $userId);
     }
 
+    /** id участников переписки по возрастанию; для несуществующей переписки — пустой массив. */
+    public static function findMemberIds(int $conversationId): array
+    {
+        $stmt = DB::get()->prepare('SELECT user_id FROM conversation_members WHERE conversation_id = ? ORDER BY user_id');
+        $stmt->execute([$conversationId]);
+
+        return array_map('intval', $stmt->fetchAll(PDO::FETCH_COLUMN));
+    }
+
     /** Состоит ли пользователь в переписке. Для несуществующей переписки — false. */
     public static function isMember(int $conversationId, int $userId): bool
     {
@@ -59,13 +68,14 @@ class Conversation
 
     /**
      * Возвращает личную переписку между двумя пользователями,
-     * создавая её, если её ещё нет.
+     * создавая её, если её ещё нет. $created — создана ли переписка этим вызовом.
      */
-    public static function findOrCreateSingle(int $userId, int $otherUserId): array
+    public static function findOrCreateSingle(int $userId, int $otherUserId, ?bool &$created = null): array
     {
         $db  = DB::get();
         $key = self::singleKey($userId, $otherUserId);
 
+        $created = false;
         $id = self::findIdBySingleKey($key);
 
         if ($id === null) {
@@ -81,6 +91,7 @@ class Conversation
                 $stmt->execute([$id, $userId, $id, $otherUserId]);
 
                 $db->commit();
+                $created = true;
             } catch (PDOException $e) {
                 $db->rollBack();
 
@@ -161,6 +172,7 @@ class Conversation
             'name'           => $row['name'],
             'avatar'         => $avatar,
             'opponentUserId' => $opponentUserId,
+            'updatedAt'      => (int) $row['updated_at'],
         ];
     }
 

@@ -22,4 +22,20 @@ class DB
         }
         return self::$pdo;
     }
+
+    /**
+     * Сбрасывает закэшированное соединение — следующий get() подключится заново.
+     * Нужно долгоживущим процессам (websocket/server.php), когда MySQL закрыл соединение по wait_timeout.
+     */
+    public static function reset(): void
+    {
+        self::$pdo = null;
+    }
+
+    /** Ошибка «MySQL server has gone away» / «Lost connection» — соединение надо пересоздать. */
+    public static function isConnectionLost(PDOException $e): bool
+    {
+        return in_array($e->errorInfo[1] ?? null, [2006, 2013], true)
+            || str_contains($e->getMessage(), 'server has gone away');
+    }
 }

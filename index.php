@@ -25,6 +25,8 @@ register_shutdown_function(function () {
 $uri = strtok($_SERVER['REQUEST_URI'] ?? '', '?');
 
 $routes = [
+    '/global/start' => __DIR__ . '/global/start.php',
+    '/global/getWebsocketToken' => __DIR__ . '/global/getWebsocketToken.php',
     '/auth/signup' => __DIR__ . '/auth/signup.php',
     '/auth/login'  => __DIR__ . '/auth/login.php',
     '/auth/logout' => __DIR__ . '/auth/logout.php',

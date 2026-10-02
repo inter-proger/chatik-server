@@ -21,6 +21,7 @@ class ConversationsTest extends TestCase
         $res = $this->client->post('/conversations/createSingle', ['userId' => $bob]);
 
         $this->assertSuccess($res);
+        $updatedAt = (int) DB::get()->query('SELECT UNIX_TIMESTAMP(updated_at) FROM conversations')->fetchColumn();
         $this->assertSame([
             'conversationId' => 1,
             'type'           => 'single',
@@ -28,6 +29,7 @@ class ConversationsTest extends TestCase
             'name'           => null,
             'avatar'         => null,
             'opponentUserId' => $bob,
+            'updatedAt'      => $updatedAt,
         ], $res['response']['conversation']);
         $this->assertUsersAction([$this->me, $bob], $res);
     }
