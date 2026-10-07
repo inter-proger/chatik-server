@@ -43,6 +43,12 @@ $routes = [
     '/messages/getBlock' => __DIR__ . '/messages/getBlock.php',
     '/messages/send' => __DIR__ . '/messages/send.php',
     '/messages/edit' => __DIR__ . '/messages/edit.php',
+    '/admin' => __DIR__ . '/admin/index.php',
+    '/admin/login' => __DIR__ . '/admin/login.php',
+    '/admin/logout' => __DIR__ . '/admin/logout.php',
+    '/admin/getUsers' => __DIR__ . '/admin/getUsers.php',
+    '/admin/getConversations' => __DIR__ . '/admin/getConversations.php',
+    '/admin/sendMessage' => __DIR__ . '/admin/sendMessage.php',
 ];
 
 if (!isset($routes[$uri])) {
