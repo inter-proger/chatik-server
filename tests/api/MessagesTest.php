@@ -25,11 +25,14 @@ class MessagesTest extends TestCase
 
     public function testSend(): void
     {
-        $res = $this->client->post('/messages/send', ['conversationId' => $this->conversationId, 'text' => '  Hello  ']);
+        $res = $this->client->post('/messages/send', [
+            'conversationId' => $this->conversationId, 'text' => '  Hello  ', 'clientId' => 'local-1',
+        ]);
 
         $this->assertSuccess($res);
         $message = $res['response']['message'];
         $this->assertSame(Message::findById($message['messageId']), $message);
+        $this->assertSame('local-1', $message['clientId']);
         $this->assertSame($this->conversationId, $message['conversationId']);
         $this->assertSame($this->me, $message['senderId']);
         $this->assertSame('text', $message['type']);
@@ -41,9 +44,57 @@ class MessagesTest extends TestCase
     public function testSendInvalidText(): void
     {
         foreach ([[], ['text' => ''], ['text' => '   '], ['text' => str_repeat('a', Message::TEXT_MAX_LENGTH + 1)], ['text' => ['a']]] as $params) {
-            $res = $this->client->post('/messages/send', ['conversationId' => $this->conversationId] + $params);
+            $res = $this->client->post('/messages/send', ['conversationId' => $this->conversationId, 'clientId' => 'c1'] + $params);
             $this->assertError(ErrorCode::INVALID_TEXT, $res);
         }
+    }
+
+    public function testSendInvalidClientId(): void
+    {
+        $invalid = [[], ['clientId' => ''], ['clientId' => str_repeat('a', Message::CLIENT_ID_MAX_LENGTH + 1)],
+            ['clientId' => 'a b'], ['clientId' => 'ид'], ['clientId' => "a\n"], ['clientId' => ['a']]];
+        foreach ($invalid as $params) {
+            $res = $this->client->post('/messages/send', ['conversationId' => $this->conversationId, 'text' => 'Hi'] + $params);
+            $this->assertError(ErrorCode::INVALID_CLIENT_ID, $res);
+        }
+        $this->assertNull(Message::findById(1));
+
+        $clientId = str_repeat('A', Message::CLIENT_ID_MAX_LENGTH - 2) . '-_';
+        $this->assertSame($clientId, $this->send($this->client, 'Hi', $clientId)['clientId']);
+    }
+
+    public function testSendRetryReturnsSameMessage(): void
+    {
+        $message = $this->send($this->client, 'Hello', 'retry');
+
+        // Повтор (в т. ч. с другим текстом) не создаёт новое сообщение
+        $res = $this->client->post('/messages/send', ['conversationId' => $this->conversationId, 'text' => 'Other', 'clientId' => 'retry']);
+
+        $this->assertSuccess($res);
+        $this->assertSame($message, $res['response']['message']);
+        $this->assertUsersAction([$this->me], $res);
+        $this->assertNull(Message::findById($message['messageId'] + 1));
+    }
+
+    public function testSendClientIdIsPerSenderAndCaseSensitive(): void
+    {
+        $mine  = $this->send($this->client, 'Hello', 'same');
+        $bobs  = $this->send($this->bobClient, 'Hello', 'same');
+        $upper = $this->send($this->client, 'Hello', 'SAME');
+
+        $this->assertSame(3, count(array_unique([$mine['messageId'], $bobs['messageId'], $upper['messageId']])));
+    }
+
+    public function testSendClientIdTakenInOtherConversation(): void
+    {
+        $this->send($this->client, 'Hello', 'taken');
+        [, $carol] = $this->signup('carol');
+        $otherId = Conversation::findOrCreateSingle($this->me, $carol['userId'])['conversationId'];
+
+        $res = $this->client->post('/messages/send', ['conversationId' => $otherId, 'text' => 'Hello', 'clientId' => 'taken']);
+
+        $this->assertError(ErrorCode::MESSAGE_CLIENT_ID_TAKEN, $res);
+        $this->assertSame([], Message::findList($otherId, null, 1)['messages']);
     }
 
     public function testSendConversationNotFound(): void
@@ -51,7 +102,7 @@ class MessagesTest extends TestCase
         [$carolClient] = $this->signup('carol');
 
         foreach (['', 'abc', '-1', '999', (string) $this->conversationId] as $conversationId) {
-            $res = $carolClient->post('/messages/send', ['conversationId' => $conversationId, 'text' => 'Hi']);
+            $res = $carolClient->post('/messages/send', ['conversationId' => $conversationId, 'text' => 'Hi', 'clientId' => 'c1']);
             $this->assertError(ErrorCode::CONVERSATION_NOT_FOUND, $res);
         }
         $this->assertNull(Message::findById(1));
@@ -59,7 +110,7 @@ class MessagesTest extends TestCase
 
     public function testSendNotAuthenticated(): void
     {
-        $res = $this->client()->post('/messages/send', ['conversationId' => $this->conversationId, 'text' => 'Hi']);
+        $res = $this->client()->post('/messages/send', ['conversationId' => $this->conversationId, 'text' => 'Hi', 'clientId' => 'c1']);
 
         $this->assertError(ErrorCode::NOT_AUTHENTICATED, $res);
     }
@@ -235,9 +286,11 @@ class MessagesTest extends TestCase
 
     // ---- Хелперы ----
 
-    private function send(ApiClient $client, string $text): array
+    private function send(ApiClient $client, string $text, ?string $clientId = null): array
     {
-        $res = $client->post('/messages/send', ['conversationId' => $this->conversationId, 'text' => $text]);
+        $res = $client->post('/messages/send', [
+            'conversationId' => $this->conversationId, 'text' => $text, 'clientId' => $clientId ?? bin2hex(random_bytes(8)),
+        ]);
         $this->assertSuccess($res);
 
         return $res['response']['message'];

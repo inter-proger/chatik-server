@@ -8,13 +8,14 @@ class MessageTest extends TestCase
     public function testFromRow(): void
     {
         $message = Message::fromRow([
-            'id' => '7', 'conversation_id' => '2', 'block_id' => '3', 'sender_id' => '5',
+            'id' => '7', 'conversation_id' => '2', 'block_id' => '3', 'sender_id' => '5', 'client_id' => 'local-7',
             'type' => 'text', 'text' => 'Hi', 'is_edited' => '1',
             'created_at' => '1790000000', 'updated_at' => '1790000060',
         ]);
 
         $this->assertSame([
             'messageId'      => 7,
+            'clientId'       => 'local-7',
             'conversationId' => 2,
             'blockId'        => 3,
             'senderId'       => 5,
@@ -41,6 +42,37 @@ class MessageTest extends TestCase
         $this->assertFalse($message['isEdited']);
         $this->assertTrue(abs($message['createdAt'] - $before) <= 2, 'createdAt must be current time');
         $this->assertSame($message['createdAt'], $message['updatedAt']);
+        $this->assertTrue(
+            (bool) preg_match('/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/D', $message['clientId']),
+            'Without clientId a UUID v4 is generated'
+        );
+    }
+
+    public function testSendWithClientIdIsIdempotent(): void
+    {
+        [$conversationId, $a, $b] = $this->conversation();
+
+        $first = Message::send($conversationId, $a, 'Hello', 'local-1', $isNew);
+        $this->assertTrue($isNew);
+        $this->assertSame('local-1', $first['clientId']);
+
+        $retry = Message::send($conversationId, $a, 'Hello again', 'local-1', $isNew);
+        $this->assertFalse($isNew);
+        $this->assertSame($first, $retry);
+        $this->assertSame([1], array_map('intval', DB::get()->query('SELECT messages_count FROM message_blocks')->fetchAll(PDO::FETCH_COLUMN)));
+
+        // У другого отправителя тот же clientId — другое сообщение
+        $this->assertFalse($first['messageId'] === Message::send($conversationId, $b, 'Hi', 'local-1', $isNew)['messageId']);
+        $this->assertTrue($isNew);
+    }
+
+    public function testNormalizeClientId(): void
+    {
+        $this->assertSame('6f1c2a9e-4b7d-4e3a-9c51-0d2f8b6a7e14', Message::normalizeClientId('6f1c2a9e-4b7d-4e3a-9c51-0d2f8b6a7e14'));
+        $this->assertSame('A_b-1', Message::normalizeClientId('A_b-1'));
+        foreach (['', ' a', 'a\n', "a\n", 'a.b', 'ид', str_repeat('a', Message::CLIENT_ID_MAX_LENGTH + 1), null, 1, ['a']] as $value) {
+            $this->assertNull(Message::normalizeClientId($value));
+        }
     }
 
     public function testSendFillsBlocks(): void

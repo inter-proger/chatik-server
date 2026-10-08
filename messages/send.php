@@ -22,12 +22,25 @@ if ($text === null) {
     Response::error(ErrorCode::INVALID_TEXT);
 }
 
-$message = Message::send((int) $conversationId, $userId, $text);
+$clientId = Message::normalizeClientId($_POST['clientId'] ?? '');
+if ($clientId === null) {
+    Response::error(ErrorCode::INVALID_CLIENT_ID);
+}
 
-WebSocket::publish(
-    Conversation::findMemberIds($message['conversationId']), 'messages', 'received',
-    ['message' => $message], [$message['senderId']]
-);
+$message = Message::send((int) $conversationId, $userId, $text, $clientId, $isNew);
+
+// Повтор с тем же clientId возвращает уже отправленное сообщение — но только из этой же переписки
+if ($message['conversationId'] !== (int) $conversationId) {
+    Response::error(ErrorCode::MESSAGE_CLIENT_ID_TAKEN);
+}
+
+// При повторе событие уже было разослано при первой отправке
+if ($isNew) {
+    WebSocket::publish(
+        Conversation::findMemberIds($message['conversationId']), 'messages', 'received',
+        ['message' => $message], [$message['senderId']]
+    );
+}
 
 Response::success([
     'message' => $message,

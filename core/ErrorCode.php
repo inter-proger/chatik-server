@@ -8,6 +8,7 @@ class ErrorCode
     const INVALID_NAME     = 1003;
     const INVALID_PARAMS   = 1004;
     const INVALID_TEXT     = 1005;
+    const INVALID_CLIENT_ID = 1006;
 
     // Auth
     const LOGIN_TAKEN      = 2001;
@@ -33,6 +34,7 @@ class ErrorCode
     const MESSAGE_NOT_FOUND       = 6001;
     const MESSAGE_BLOCK_NOT_FOUND = 6002;
     const MESSAGE_EDIT_FORBIDDEN  = 6003;
+    const MESSAGE_CLIENT_ID_TAKEN = 6004;
 
     // Server
     const INTERNAL_ERROR    = 9001;

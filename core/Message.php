@@ -12,15 +12,18 @@ class Message
     /** Максимальная длина текста сообщения в символах */
     const TEXT_MAX_LENGTH = 4096;
 
+    /** Максимальная длина clientId */
+    const CLIENT_ID_MAX_LENGTH = 64;
+
     private const SELECT =
-        'SELECT id, conversation_id, block_id, sender_id, type, text, is_edited,
+        'SELECT id, conversation_id, block_id, sender_id, client_id, type, text, is_edited,
                 UNIX_TIMESTAMP(created_at) AS created_at, UNIX_TIMESTAMP(updated_at) AS updated_at
          FROM messages';
 
     /**
      * Возвращает сущность сообщения по id или null, если не найдено.
      *
-     * Формат: messageId, conversationId, blockId, senderId, type, text, isEdited, createdAt, updatedAt
+     * Формат: messageId, clientId, conversationId, blockId, senderId, type, text, isEdited, createdAt, updatedAt
      */
     public static function findById(int $id): ?array
     {
@@ -89,15 +92,32 @@ class Message
     /**
      * Добавляет сообщение в последний блок переписки (или в новый, если последний заполнен)
      * и возвращает его сущность.
+     *
+     * $clientId — идентификатор от клиента (null — сгенерировать UUID). Если у отправителя уже есть
+     * сообщение с таким clientId, новое не создаётся: возвращается существующее (оно может быть
+     * из другой переписки), $isNew = false.
      */
-    public static function send(int $conversationId, int $senderId, string $text): array
-    {
+    public static function send(
+        int $conversationId, int $senderId, string $text, ?string $clientId = null, ?bool &$isNew = null
+    ): array {
+        $clientId ??= self::uuid();
+
         $db = DB::get();
         $db->beginTransaction();
         try {
-            // Блокировка переписки сериализует параллельные отправки — иначе блок мог бы переполниться
+            // Блокировка переписки сериализует параллельные отправки — иначе блок мог бы переполниться,
+            // а повторы с одним clientId — создать дубль
             $stmt = $db->prepare('SELECT id FROM conversations WHERE id = ? FOR UPDATE');
             $stmt->execute([$conversationId]);
+
+            $stmt = $db->prepare('SELECT id FROM messages WHERE sender_id = ? AND client_id = ?');
+            $stmt->execute([$senderId, $clientId]);
+            $existingId = $stmt->fetchColumn();
+            if ($existingId !== false) {
+                $db->commit();
+                $isNew = false;
+                return self::findById((int) $existingId);
+            }
 
             $stmt = $db->prepare(
                 'SELECT id, messages_count FROM message_blocks WHERE conversation_id = ? ORDER BY id DESC LIMIT 1'
@@ -113,9 +133,9 @@ class Message
             }
 
             $stmt = $db->prepare(
-                'INSERT INTO messages (conversation_id, block_id, sender_id, type, text) VALUES (?, ?, ?, ?, ?)'
+                'INSERT INTO messages (conversation_id, block_id, sender_id, client_id, type, text) VALUES (?, ?, ?, ?, ?, ?)'
             );
-            $stmt->execute([$conversationId, $blockId, $senderId, self::TYPE_TEXT, $text]);
+            $stmt->execute([$conversationId, $blockId, $senderId, $clientId, self::TYPE_TEXT, $text]);
             $id = (int) $db->lastInsertId();
 
             $db->prepare('UPDATE message_blocks SET messages_count = messages_count + 1 WHERE id = ?')->execute([$blockId]);
@@ -126,6 +146,7 @@ class Message
             throw $e;
         }
 
+        $isNew = true;
         return self::findById($id);
     }
 
@@ -164,10 +185,25 @@ class Message
         return $text;
     }
 
+    /**
+     * Проверяет clientId из запроса: строка из латинских букв, цифр, «-» и «_»,
+     * от 1 до CLIENT_ID_MAX_LENGTH символов. null — если не подходит.
+     */
+    public static function normalizeClientId(mixed $clientId): ?string
+    {
+        if (!is_string($clientId)
+            || !preg_match('/^[A-Za-z0-9_-]{1,' . self::CLIENT_ID_MAX_LENGTH . '}$/D', $clientId)) {
+            return null;
+        }
+
+        return $clientId;
+    }
+
     public static function fromRow(array $row): array
     {
         return [
             'messageId'      => (int) $row['id'],
+            'clientId'       => $row['client_id'],
             'conversationId' => (int) $row['conversation_id'],
             'blockId'        => (int) $row['block_id'],
             'senderId'       => (int) $row['sender_id'],
@@ -192,5 +228,15 @@ class Message
         $stmt->execute($blockIds);
 
         return array_map([self::class, 'fromRow'], $stmt->fetchAll());
+    }
+
+    /** UUID v4 */
+    private static function uuid(): string
+    {
+        $bytes    = random_bytes(16);
+        $bytes[6] = chr(ord($bytes[6]) & 0x0F | 0x40);
+        $bytes[8] = chr(ord($bytes[8]) & 0x3F | 0x80);
+
+        return vsprintf('%s%s-%s-%s-%s-%s%s%s', str_split(bin2hex($bytes), 4));
     }
 }

@@ -67,7 +67,7 @@ class WsEventsTest extends TestCase
         $mine = $this->wsConnect($this->client, $this->me);
         $bobs = $this->wsConnect($this->bobClient, $this->bob);
 
-        $message = $this->client->post('/messages/send', ['conversationId' => $conversationId, 'text' => 'Привет'])['response']['message'];
+        $message = $this->client->post('/messages/send', ['conversationId' => $conversationId, 'text' => 'Привет', 'clientId' => 'c1'])['response']['message'];
 
         // Отправитель тоже получает событие
         $this->assertEvent('messages', 'received', ['message' => $message], $bobs->receive(), [$this->me]);
@@ -80,7 +80,7 @@ class WsEventsTest extends TestCase
         $first  = $this->wsConnect($this->bobClient, $this->bob);
         $second = $this->wsConnect($this->bobClient, $this->bob);
 
-        $this->client->post('/messages/send', ['conversationId' => $conversationId, 'text' => 'Hi']);
+        $this->client->post('/messages/send', ['conversationId' => $conversationId, 'text' => 'Hi', 'clientId' => 'c2']);
 
         $a = $first->receive();
         $b = $second->receive();
@@ -95,11 +95,23 @@ class WsEventsTest extends TestCase
         $conversationId = Conversation::findOrCreateSingle($this->me, $this->bob)['conversationId'];
         $bobs = $this->wsConnect($this->bobClient, $this->bob);
 
-        $this->client->post('/messages/send', ['conversationId' => $conversationId, 'text' => 'Hi']);
+        $this->client->post('/messages/send', ['conversationId' => $conversationId, 'text' => 'Hi', 'clientId' => 'c3']);
         $bobs->ack($bobs->receive());
 
         $this->assertTrue($bobs->ping());
         $this->assertNull($bobs->closeCode);
+    }
+
+    public function testMessageReceivedNotSentOnRetry(): void
+    {
+        $conversationId = Conversation::findOrCreateSingle($this->me, $this->bob)['conversationId'];
+        $params = ['conversationId' => $conversationId, 'text' => 'Hi', 'clientId' => 'retry'];
+        $this->assertSuccess($this->client->post('/messages/send', $params));
+        $bobs = $this->wsConnect($this->bobClient, $this->bob);
+
+        $this->assertSuccess($this->client->post('/messages/send', $params));
+
+        $this->assertNull($bobs->receive(0.3));
     }
 
     // ---- messages / edited ----
@@ -131,7 +143,7 @@ class WsEventsTest extends TestCase
         $conversationId = Conversation::findOrCreateSingle($this->me, $this->bob)['conversationId'];
         $pending = $this->ws();
 
-        $this->assertSuccess($this->client->post('/messages/send', ['conversationId' => $conversationId, 'text' => 'Hi']));
+        $this->assertSuccess($this->client->post('/messages/send', ['conversationId' => $conversationId, 'text' => 'Hi', 'clientId' => 'c4']));
         $this->assertNull($pending->receive(0.3));
     }
 }
