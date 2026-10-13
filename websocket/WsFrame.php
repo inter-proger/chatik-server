@@ -15,7 +15,7 @@ class WsFrame
     const OP_PING         = 0x9;
     const OP_PONG         = 0xA;
 
-    /** Ошибка протокола — см. «Коды закрытия соединения» в API_Documentation.md */
+    /** Ошибка протокола — см. «Коды закрытия соединения» в docs/api/WebSocket.md */
     const CLOSE_PROTOCOL_ERROR = 4000;
     const CLOSE_TOO_BIG        = 1009;
 
