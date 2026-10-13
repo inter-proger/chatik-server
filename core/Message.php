@@ -15,19 +15,21 @@ class Message
     /** Максимальная длина clientId */
     const CLIENT_ID_MAX_LENGTH = 64;
 
-    private const SELECT =
-        'SELECT id, conversation_id, block_id, sender_id, client_id, type, text, is_edited,
-                UNIX_TIMESTAMP(created_at) AS created_at, UNIX_TIMESTAMP(updated_at) AS updated_at
-         FROM messages';
+    private static function select(): string
+    {
+        return 'SELECT id, conversation_id, block_id, sender_id, client_id, type, text, is_edited,
+                       ' . DB::ms('created_at') . ' AS created_at, ' . DB::ms('updated_at') . ' AS updated_at
+                FROM messages';
+    }
 
     /**
      * Возвращает сущность сообщения по id или null, если не найдено.
      *
-     * Формат: messageId, clientId, conversationId, blockId, senderId, type, text, isEdited, createdAt, updatedAt
+     * Формат: messageId, clientId, conversationId, blockId, senderId, type, text, isEdited, createdAt, updatedAt (мс)
      */
     public static function findById(int $id): ?array
     {
-        $stmt = DB::get()->prepare(self::SELECT . ' WHERE id = ?');
+        $stmt = DB::get()->prepare(self::select() . ' WHERE id = ?');
         $stmt->execute([$id]);
         $row = $stmt->fetch();
 
@@ -90,8 +92,9 @@ class Message
     }
 
     /**
-     * Добавляет сообщение в последний блок переписки (или в новый, если последний заполнен)
-     * и возвращает его сущность.
+     * Добавляет сообщение в последний блок переписки (или в новый, если последний заполнен),
+     * делает его последним сообщением переписки и поднимает её в списке (positionUpdatedAt = createdAt сообщения).
+     * Возвращает сущность сообщения.
      *
      * $clientId — идентификатор от клиента (null — сгенерировать UUID). Если у отправителя уже есть
      * сообщение с таким clientId, новое не создаётся: возвращается существующее (оно может быть
@@ -140,6 +143,13 @@ class Message
 
             $db->prepare('UPDATE message_blocks SET messages_count = messages_count + 1 WHERE id = ?')->execute([$blockId]);
 
+            // Время — из строки сообщения, чтобы positionUpdatedAt совпадал с createdAt до миллисекунды
+            $db->prepare(
+                'UPDATE conversations c JOIN messages m ON m.id = ?
+                 SET c.last_message_id = m.id, c.position_updated_at = m.created_at
+                 WHERE c.id = ?'
+            )->execute([$id, $conversationId]);
+
             $db->commit();
         } catch (Throwable $e) {
             $db->rollBack();
@@ -150,13 +160,40 @@ class Message
         return self::findById($id);
     }
 
-    /** Меняет текст сообщения, помечает его отредактированным и возвращает обновлённую сущность. */
-    public static function edit(int $id, string $text): array
+    /**
+     * Меняет текст сообщения, помечает его отредактированным и возвращает обновлённую сущность.
+     * Если сообщение — последнее в переписке, её updatedInfoAt становится равным updatedAt сообщения
+     * (позиция не меняется); $isLast — было ли сообщение последним.
+     */
+    public static function edit(int $id, string $text, ?bool &$isLast = null): array
     {
-        $stmt = DB::get()->prepare(
-            'UPDATE messages SET text = ?, is_edited = 1, updated_at = CURRENT_TIMESTAMP WHERE id = ?'
-        );
-        $stmt->execute([$text, $id]);
+        $db = DB::get();
+        $db->beginTransaction();
+        try {
+            // Блокировка переписки — как в send(): «последнее ли сообщение» не изменится до коммита
+            $stmt = $db->prepare(
+                'SELECT c.last_message_id FROM messages m JOIN conversations c ON c.id = m.conversation_id
+                 WHERE m.id = ? FOR UPDATE OF c'
+            );
+            $stmt->execute([$id]);
+            $isLast = (int) $stmt->fetchColumn() === $id;
+
+            $db->prepare('UPDATE messages SET text = ?, is_edited = 1, updated_at = CURRENT_TIMESTAMP(3) WHERE id = ?')
+                ->execute([$text, $id]);
+
+            if ($isLast) {
+                $db->prepare(
+                    'UPDATE conversations c JOIN messages m ON m.id = c.last_message_id
+                     SET c.updated_info_at = m.updated_at
+                     WHERE c.last_message_id = ?'
+                )->execute([$id]);
+            }
+
+            $db->commit();
+        } catch (Throwable $e) {
+            $db->rollBack();
+            throw $e;
+        }
 
         return self::findById($id);
     }
@@ -215,6 +252,31 @@ class Message
         ];
     }
 
+    /**
+     * LastMessage — краткое представление последнего сообщения переписки для списка чатов:
+     * messageId, type, text, updatedAt (мс). Строка — колонки id, type, text, updated_at (мс).
+     */
+    public static function lastMessageFromRow(array $row): array
+    {
+        return [
+            'messageId' => (int) $row['id'],
+            'type'      => $row['type'],
+            'text'      => $row['text'],
+            'updatedAt' => (int) $row['updated_at'],
+        ];
+    }
+
+    /** LastMessage из сущности сообщения. */
+    public static function toLastMessage(array $message): array
+    {
+        return [
+            'messageId' => $message['messageId'],
+            'type'      => $message['type'],
+            'text'      => $message['text'],
+            'updatedAt' => $message['updatedAt'],
+        ];
+    }
+
     private static function findByBlocks(array $blockIds): array
     {
         if (!$blockIds) {
@@ -222,7 +284,7 @@ class Message
         }
 
         $stmt = DB::get()->prepare(
-            self::SELECT . ' WHERE block_id IN (' . implode(',', array_fill(0, count($blockIds), '?')) . ')
+            self::select() . ' WHERE block_id IN (' . implode(',', array_fill(0, count($blockIds), '?')) . ')
              ORDER BY id DESC'
         );
         $stmt->execute($blockIds);

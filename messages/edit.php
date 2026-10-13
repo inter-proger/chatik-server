@@ -32,17 +32,19 @@ if ($text === null) {
 }
 
 // Текст не изменился — сообщение не трогаем и отредактированным не помечаем
+$body = ['message' => $message];
 if ($text !== $message['text']) {
-    $message = Message::edit($message['messageId'], $text);
+    $message = Message::edit($message['messageId'], $text, $isLast);
+
+    // lastMessage — только если отредактировано последнее сообщение переписки
+    $body = ['message' => $message] + ($isLast ? ['lastMessage' => Message::toLastMessage($message)] : []);
 
     WebSocket::publish(
         Conversation::findMemberIds($message['conversationId']), 'messages', 'edited',
-        ['message' => $message], [$message['senderId']]
+        $body, [$message['senderId']]
     );
 }
 
-Response::success([
-    'message' => $message,
-], [
+Response::success($body, [
     Action::users([$message['senderId']]),
 ]);

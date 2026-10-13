@@ -44,7 +44,7 @@
 
 | Поле ответа     | Тип            | Описание                                                                 |
 |-----------------|----------------|--------------------------------------------------------------------------|
-| `conversations` | Conversation[] | Объекты [Conversation](Objects.md#объект-conversation) глазами пользователя `userId` (`opponentUserId` — его собеседник), сначала новые |
+| `conversations` | Conversation[] | Объекты [Conversation](Objects.md#объект-conversation) глазами пользователя `userId` (`opponentUserId` — его собеседник), в порядке списка чатов — как в [`/conversations/getList`](methods/Conversations.md#get-conversationsgetlist--список-переписок) |
 | `users`         | User[]         | Объекты [User](Objects.md#объект-user) всех участников переписок в выдаче, по возрастанию `userId` |
 | `hasNext`       | Bool           | Есть ли следующая страница                                               |
 

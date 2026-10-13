@@ -7,12 +7,12 @@
 | 1001 | Невалидный `login` (в т. ч. длиннее 64 символов)      | `/auth/signup`, `/auth/login` |
 | 1002 | Пароль не соответствует требованиям                   | `/auth/signup`, `/auth/login` |
 | 1003 | Невалидное `name` (в т. ч. длиннее 128 символов)      | `/auth/signup`                |
-| 1004 | Невалидные параметры запроса                          | `/users/getList`, `/users/getBatch`, `/conversations/getList`, WS `auth` / `connect` |
+| 1004 | Невалидные параметры запроса                          | `/users/getList`, `/users/getBatch`, `/conversations/getList`, `/conversations/getBatch`, WS `auth` / `connect` |
 | 1005 | Невалидный текст сообщения: пустой (после обрезки пробелов) или длиннее 4096 символов | `/messages/send`, `/messages/edit` |
 | 1006 | Невалидный `clientId`: не передан, пустой, длиннее 64 символов или содержит символы кроме `A–Z`, `a–z`, `0–9`, `-`, `_` | `/messages/send` |
 | 2001 | Логин уже занят                                       | `/auth/signup`                |
 | 2002 | Неверный логин или пароль                             | `/auth/login`                 |
-| 2003 | Пользователь не авторизован                           | `/auth/logout`, `/profile/get`, `/profile/setAvatar`, `/profile/removeAvatar`, `/files/uploadImage`, `/users/getList`, `/users/getBatch`, `/conversations/createSingle`, `/conversations/getList`, `/messages/getList`, `/messages/getBlock`, `/messages/send`, `/messages/edit`, `/global/getWebsocketToken` |
+| 2003 | Пользователь не авторизован                           | `/auth/logout`, `/profile/get`, `/profile/setAvatar`, `/profile/removeAvatar`, `/files/uploadImage`, `/users/getList`, `/users/getBatch`, `/conversations/createSingle`, `/conversations/getList`, `/conversations/getBatch`, `/messages/getList`, `/messages/getBlock`, `/messages/send`, `/messages/edit`, `/global/getWebsocketToken` |
 | 2004 | Токен подключения к WebSocket не найден, истёк, уже использован или выдан другому пользователю | WS `auth` / `connect` |
 | 3001 | Файл не передан                                       | `/files/uploadImage`          |
 | 3002 | Файл слишком большой (максимум 10 МБ или 25 мегапикселей) | `/files/uploadImage`      |

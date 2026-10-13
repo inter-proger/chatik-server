@@ -69,9 +69,11 @@ class WsEventsTest extends TestCase
 
         $message = $this->client->post('/messages/send', ['conversationId' => $conversationId, 'text' => 'Привет', 'clientId' => 'c1'])['response']['message'];
 
-        // Отправитель тоже получает событие
-        $this->assertEvent('messages', 'received', ['message' => $message], $bobs->receive(), [$this->me]);
-        $this->assertEvent('messages', 'received', ['message' => $message], $mine->receive(), [$this->me]);
+        // Отправитель тоже получает событие; lastMessage — новое последнее сообщение переписки
+        $body = ['message' => $message, 'lastMessage' => Message::toLastMessage($message)];
+        $this->assertEvent('messages', 'received', $body, $bobs->receive(), [$this->me]);
+        $this->assertEvent('messages', 'received', $body, $mine->receive(), [$this->me]);
+        $this->assertSame($body['lastMessage'], Conversation::findById($conversationId, $this->bob)['lastMessage']);
     }
 
     public function testMessageReceivedOnAllConnectionsOfUser(): void
@@ -120,6 +122,20 @@ class WsEventsTest extends TestCase
     {
         $conversationId = Conversation::findOrCreateSingle($this->me, $this->bob)['conversationId'];
         $messageId = Message::send($conversationId, $this->me, 'Hi')['messageId'];
+        $bobs = $this->wsConnect($this->bobClient, $this->bob);
+
+        $res = $this->client->post('/messages/edit', ['messageId' => $messageId, 'newText' => 'Hi!'])['response'];
+
+        // Отредактировано последнее сообщение — в событии новый lastMessage, как и в ответе
+        $this->assertEvent('messages', 'edited', $res, $bobs->receive(), [$this->me]);
+        $this->assertSame(Message::toLastMessage($res['message']), $res['lastMessage']);
+    }
+
+    public function testMessageEditedNotLastHasNoLastMessage(): void
+    {
+        $conversationId = Conversation::findOrCreateSingle($this->me, $this->bob)['conversationId'];
+        $messageId = Message::send($conversationId, $this->me, 'Hi')['messageId'];
+        Message::send($conversationId, $this->bob, 'Hello');
         $bobs = $this->wsConnect($this->bobClient, $this->bob);
 
         $message = $this->client->post('/messages/edit', ['messageId' => $messageId, 'newText' => 'Hi!'])['response']['message'];

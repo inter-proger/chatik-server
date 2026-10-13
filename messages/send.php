@@ -38,7 +38,7 @@ if ($message['conversationId'] !== (int) $conversationId) {
 if ($isNew) {
     WebSocket::publish(
         Conversation::findMemberIds($message['conversationId']), 'messages', 'received',
-        ['message' => $message], [$message['senderId']]
+        ['message' => $message, 'lastMessage' => Message::toLastMessage($message)], [$message['senderId']]
     );
 }
 

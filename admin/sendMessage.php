@@ -32,7 +32,7 @@ $message = Message::send((int) $conversationId, (int) $userId, $text);
 // Как в /messages/send: событие получают все участники, включая устройства отправителя
 WebSocket::publish(
     Conversation::findMemberIds($message['conversationId']), 'messages', 'received',
-    ['message' => $message], [$message['senderId']]
+    ['message' => $message, 'lastMessage' => Message::toLastMessage($message)], [$message['senderId']]
 );
 
 Response::success([

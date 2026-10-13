@@ -38,7 +38,32 @@ class MessagesTest extends TestCase
         $this->assertSame('text', $message['type']);
         $this->assertSame('Hello', $message['text']);
         $this->assertFalse($message['isEdited']);
+        $this->assertSame(['message'], array_keys($res['response']));
         $this->assertUsersAction([$this->me], $res);
+    }
+
+    public function testSendRaisesConversation(): void
+    {
+        $before = Conversation::findById($this->conversationId, $this->me);
+
+        $first  = $this->send($this->client, 'one');
+        $second = $this->send($this->bobClient, 'two');
+
+        $conversation = Conversation::findById($this->conversationId, $this->me);
+        $this->assertSame(Message::toLastMessage($second), $conversation['lastMessage']);
+        $this->assertSame($second['createdAt'], $conversation['positionUpdatedAt']);
+        $this->assertTrue($conversation['positionUpdatedAt'] >= $first['createdAt']);
+        $this->assertSame($before['updatedInfoAt'], $conversation['updatedInfoAt']);
+    }
+
+    public function testSendRetryDoesNotTouchConversation(): void
+    {
+        $params = ['conversationId' => $this->conversationId, 'text' => 'one', 'clientId' => 'retry'];
+        $first  = $this->client->post('/messages/send', $params)['response']['message'];
+        $second = $this->send($this->bobClient, 'two');
+
+        $this->assertSame($first, $this->client->post('/messages/send', $params)['response']['message']);
+        $this->assertSame($second['messageId'], Conversation::findById($this->conversationId, $this->me)['lastMessage']['messageId']);
     }
 
     public function testSendInvalidText(): void
@@ -128,7 +153,26 @@ class MessagesTest extends TestCase
         $this->assertSame(Message::findById($id), $message);
         $this->assertSame('Bye', $message['text']);
         $this->assertTrue($message['isEdited']);
+        // Отредактировано последнее сообщение — lastMessage и updatedInfoAt переписки обновлены
+        $this->assertSame(Message::toLastMessage($message), $res['response']['lastMessage']);
+        $conversation = Conversation::findById($this->conversationId, $this->me);
+        $this->assertSame($res['response']['lastMessage'], $conversation['lastMessage']);
+        $this->assertSame($message['updatedAt'], $conversation['updatedInfoAt']);
+        $this->assertSame($message['createdAt'], $conversation['positionUpdatedAt']);
         $this->assertUsersAction([$this->me], $res);
+    }
+
+    public function testEditNotLastMessage(): void
+    {
+        $id = $this->send($this->client, 'Hello')['messageId'];
+        $this->send($this->bobClient, 'Hi');
+        $conversation = Conversation::findById($this->conversationId, $this->me);
+
+        $res = $this->client->post('/messages/edit', ['messageId' => $id, 'newText' => 'Bye']);
+
+        $this->assertSuccess($res);
+        $this->assertSame(['message'], array_keys($res['response']));
+        $this->assertSame($conversation, Conversation::findById($this->conversationId, $this->me));
     }
 
     public function testEditSameTextKeepsMessage(): void
@@ -138,7 +182,7 @@ class MessagesTest extends TestCase
         $res = $this->client->post('/messages/edit', ['messageId' => $message['messageId'], 'newText' => ' Hello ']);
 
         $this->assertSuccess($res);
-        $this->assertSame($message, $res['response']['message']);
+        $this->assertSame(['message' => $message], $res['response']);
         $this->assertFalse(Message::findById($message['messageId'])['isEdited']);
         $this->assertUsersAction([$this->me], $res);
     }

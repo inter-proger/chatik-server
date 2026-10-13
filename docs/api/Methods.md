@@ -35,6 +35,7 @@
 
 - [POST /conversations/createSingle — Создание личной переписки](methods/Conversations.md#post-conversationscreatesingle--создание-личной-переписки)
 - [GET /conversations/getList — Список переписок](methods/Conversations.md#get-conversationsgetlist--список-переписок)
+- [GET /conversations/getBatch — Переписки по списку id](methods/Conversations.md#get-conversationsgetbatch--переписки-по-списку-id)
 
 ## [/messages](methods/Messages.md) — Сообщения
 

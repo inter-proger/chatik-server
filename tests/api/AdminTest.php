@@ -186,7 +186,7 @@ class AdminTest extends TestCase
 
         // Событие получают все участники — в том числе сам отправитель, он отправлял не со своего устройства
         foreach ([$meWs, $bobWs] as $ws) {
-            $this->assertEvent('messages', 'received', ['message' => $message], $ws->receive(), [$me]);
+            $this->assertEvent('messages', 'received', ['message' => $message, 'lastMessage' => Message::toLastMessage($message)], $ws->receive(), [$me]);
         }
     }
 

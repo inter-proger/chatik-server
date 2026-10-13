@@ -10,7 +10,7 @@ class MessageTest extends TestCase
         $message = Message::fromRow([
             'id' => '7', 'conversation_id' => '2', 'block_id' => '3', 'sender_id' => '5', 'client_id' => 'local-7',
             'type' => 'text', 'text' => 'Hi', 'is_edited' => '1',
-            'created_at' => '1790000000', 'updated_at' => '1790000060',
+            'created_at' => '1790000000123', 'updated_at' => '1790000060456',
         ]);
 
         $this->assertSame([
@@ -22,8 +22,8 @@ class MessageTest extends TestCase
             'type'           => 'text',
             'text'           => 'Hi',
             'isEdited'       => true,
-            'createdAt'      => 1790000000,
-            'updatedAt'      => 1790000060,
+            'createdAt'      => 1790000000123,
+            'updatedAt'      => 1790000060456,
         ], $message);
     }
 
@@ -31,7 +31,7 @@ class MessageTest extends TestCase
     {
         [$conversationId, $a] = $this->conversation();
 
-        $before  = time();
+        $before  = (int) floor(microtime(true) * 1000);
         $message = Message::send($conversationId, $a, 'Hello');
 
         $this->assertSame(1, $message['messageId']);
@@ -40,7 +40,7 @@ class MessageTest extends TestCase
         $this->assertSame('text', $message['type']);
         $this->assertSame('Hello', $message['text']);
         $this->assertFalse($message['isEdited']);
-        $this->assertTrue(abs($message['createdAt'] - $before) <= 2, 'createdAt must be current time');
+        $this->assertTrue(abs($message['createdAt'] - $before) <= 2000, 'createdAt must be current time in milliseconds');
         $this->assertSame($message['createdAt'], $message['updatedAt']);
         $this->assertTrue(
             (bool) preg_match('/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/D', $message['clientId']),
@@ -104,6 +104,18 @@ class MessageTest extends TestCase
         $this->assertSame('Bye', $message['text']);
         $this->assertTrue($message['isEdited']);
         $this->assertSame('Bye', Message::findById($id)['text']);
+        $this->assertTrue($message['updatedAt'] >= $message['createdAt']);
+    }
+
+    public function testToLastMessage(): void
+    {
+        [$conversationId, $a] = $this->conversation();
+        $message = Message::send($conversationId, $a, 'Hello');
+
+        $this->assertSame(
+            ['messageId' => $message['messageId'], 'type' => 'text', 'text' => 'Hello', 'updatedAt' => $message['updatedAt']],
+            Message::toLastMessage($message)
+        );
     }
 
     public function testFindByIdMissing(): void

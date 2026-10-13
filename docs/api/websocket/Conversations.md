@@ -25,7 +25,9 @@
       "name": null,
       "avatar": null,
       "opponentUserId": 1,
-      "updatedAt": 1790846400
+      "lastMessage": null,
+      "positionUpdatedAt": 1790846400123,
+      "updatedInfoAt": 1790846400123
     }
   },
   "userIds": [1, 2]

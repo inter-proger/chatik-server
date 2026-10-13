@@ -37,8 +37,8 @@
         "type": "text",
         "text": "Привет!",
         "isEdited": false,
-        "createdAt": 1790846400,
-        "updatedAt": 1790846400
+        "createdAt": 1790846400123,
+        "updatedAt": 1790846400123
       }
     ],
     "nextBlockId": 1,
@@ -92,8 +92,8 @@
         "type": "text",
         "text": "Привет!",
         "isEdited": false,
-        "createdAt": 1790846400,
-        "updatedAt": 1790846400
+        "createdAt": 1790846400123,
+        "updatedAt": 1790846400123
       }
     ]
   },
@@ -147,8 +147,8 @@
       "type": "text",
       "text": "Привет!",
       "isEdited": false,
-      "createdAt": 1790846400,
-      "updatedAt": 1790846400
+      "createdAt": 1790846400123,
+      "updatedAt": 1790846400123
     }
   },
   "actions": [
@@ -158,6 +158,8 @@
 ```
 
 Также отдаётся [action `users`](../General.md#action-users) с отправителем сообщения.
+
+Сообщение становится последним в переписке ([`lastMessage`](../Objects.md#объект-lastmessage)), и переписка поднимается наверх списка: её `positionUpdatedAt` равен `message.createdAt`. Клиент-отправитель поднимает переписку сразу по ответу, не дожидаясь события. Повтор с тем же `clientId` переписку не меняет.
 
 Участникам переписки рассылается WebSocket-событие [`messages` / `received`](../websocket/Messages.md#messages--received--новое-сообщение).
 
@@ -189,6 +191,7 @@
 | Поле      | Тип     | Описание                                                 |
 |-----------|---------|----------------------------------------------------------|
 | `message` | Message | Обновлённый объект [Message](../Objects.md#объект-message)            |
+| `lastMessage` | LastMessage | Только если отредактировано последнее сообщение переписки: её новый [LastMessage](../Objects.md#объект-lastmessage); иначе поля нет. Позиция переписки не меняется, `updatedInfoAt` переписки становится равным `message.updatedAt` |
 
 ```json
 {
@@ -203,8 +206,14 @@
       "type": "text",
       "text": "Привет! Как дела?",
       "isEdited": true,
-      "createdAt": 1790846400,
-      "updatedAt": 1790846520
+      "createdAt": 1790846400123,
+      "updatedAt": 1790846520456
+    },
+    "lastMessage": {
+      "messageId": 15,
+      "type": "text",
+      "text": "Привет! Как дела?",
+      "updatedAt": 1790846520456
     }
   },
   "actions": [

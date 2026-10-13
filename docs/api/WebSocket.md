@@ -30,7 +30,21 @@ WebSocket-соединение — канал, по которому серве�
 
 - события несут **полный объект** сущности (например, [Message](Objects.md#объект-message) целиком), а не изменённые поля;
 - клиент применяет события и данные REST **идемпотентно**: из двух версий одного объекта побеждает версия с большим `updatedAt`, при равенстве — любая. Повторное применение того же события ничего не меняет.
-Это правило — обязательное требование к будущим событиям: событие без полного объекта с `updatedAt` в протокол не добавляется.
+Это правило — обязательное требование к будущим событиям: событие без полного объекта с `updatedAt` в протокол не добавляется. Единственное исключение — переписка: события [`messages`](websocket/Messages.md) несут не весь [Conversation](Objects.md#объект-conversation), а только её позицию и `lastMessage`, и сливаются по правилам ниже.
+
+### Слияние переписки
+
+У [Conversation](Objects.md#объект-conversation) две независимые версии: позиция в списке (`positionUpdatedAt` вместе с `lastMessage`) и информация (`updatedInfoAt`). Правило «побеждает больший `updatedAt`» к ней не применяется. Вместо него клиент применяет по порядку три правила к каждой пришедшей версии переписки — из [`getList`](methods/Conversations.md#get-conversationsgetlist--список-переписок), [`getBatch`](methods/Conversations.md#get-conversationsgetbatch--переписки-по-списку-id), [`createSingle`](methods/Conversations.md#post-conversationscreatesingle--создание-личной-переписки), события [`conversations` / `singleCreated`](websocket/Conversations.md#conversations--singlecreated--создана-личная-переписка) и событий [`messages` / `received` и `edited`](websocket/Messages.md) (у них `positionUpdatedAt` = `message.createdAt`):
+
+1. **Позиция.** Версия позиции — пара `(positionUpdatedAt, lastMessage.messageId)`, сравнивается лексикографически; у `lastMessage: null` — `messageId = 0`. Если пришедшая пара **строго больше** локальной — взять `positionUpdatedAt` и `lastMessage` целиком и переместить переписку по сортировке. `messageId` в паре нужен для сообщений, отправленных в одну миллисекунду: id сообщений внутри переписки растут строго.
+2. **Текст последнего сообщения.** Если после шага 1 `lastMessage.messageId` пришедшей версии совпадает с локальным, а `lastMessage.updatedAt` больше локального — взять `lastMessage`. Так правка применяется только к тому же сообщению и не откатывается более старой правкой.
+3. **Информация.** Только для полного объекта Conversation (ответы REST, `singleCreated`): если `updatedInfoAt` больше локального — взять `memberIds`, `name`, `avatar`, `opponentUserId`, `updatedInfoAt`. События `messages` `updatedInfoAt` не меняют: иначе локальная версия «обогнала» бы не пришедшие изменения названия или участников, и следующий ответ REST с тем же `updatedInfoAt` их бы не применил.
+
+При повторе той же версии ни одно правило не срабатывает.
+
+Порядок доставки `received` и `edited` между собой не гарантирован; правила покрывают оба случая. Если `edited` по сообщению M15 пришло после `received` по более новому M16 — позиция события меньше локальной, `messageId` не совпадает, превью не откатывается. Если `edited` по M16 пришло раньше `received` по M16 — переписка поднимается сразу с отредактированным текстом, а последующее `received` (равная позиция, меньший `lastMessage.updatedAt`) ничего не меняет.
+
+Синхронизация списка переписок после переподключения — в описании [`/conversations/getList`](methods/Conversations.md#синхронизация-списка).
 
 ## Формат сообщений
 
