@@ -297,6 +297,87 @@ class MessagesTest extends TestCase
         $this->assertError(ErrorCode::NOT_AUTHENTICATED, $this->client()->get('/messages/getList', ['conversationId' => $this->conversationId]));
     }
 
+    public function testGetListReceivedAfter(): void
+    {
+        $old = $this->send($this->bobClient, 'old');
+        $edited = $this->send($this->client, 'edited');
+        $this->setCreatedAt([$old['messageId'], $edited['messageId']], 1000);
+        $new = $this->send($this->bobClient, 'new');
+        $this->assertSuccess($this->client->post('/messages/edit', ['messageId' => $edited['messageId'], 'newText' => 'changed']));
+
+        $res = $this->client->get('/messages/getList', ['conversationId' => $this->conversationId, 'receivedAfter' => '1000']);
+
+        $this->assertSuccess($res);
+        $this->assertSame([
+            'messages'        => [Message::findById($new['messageId'])],
+            'nextBlockId'     => null,
+            'hasNext'         => false,
+            'updatedBlockIds' => [$edited['blockId']],
+        ], $res['response']);
+        $this->assertUsersAction([$this->bob], $res);
+    }
+
+    public function testGetListReceivedAfterNothingNew(): void
+    {
+        $message = $this->send($this->client, 'Hi');
+
+        $res = $this->client->get('/messages/getList', ['conversationId' => $this->conversationId, 'receivedAfter' => $message['createdAt']]);
+
+        $this->assertSame(['messages' => [], 'nextBlockId' => null, 'hasNext' => false, 'updatedBlockIds' => []], $res['response']);
+        $this->assertFalse(array_key_exists('actions', $res));
+    }
+
+    public function testGetListReceivedAfterBeyondPage(): void
+    {
+        // Блоки: 20, 20, 20, 5 — все новые, страница — три новых блока
+        $ids = $this->sendMany(3 * Message::BLOCK_SIZE + 5);
+
+        $res = $this->client->get('/messages/getList', ['conversationId' => $this->conversationId, 'receivedAfter' => '0']);
+
+        $this->assertSuccess($res);
+        $this->assertSame($this->client->get('/messages/getList', ['conversationId' => $this->conversationId])['response'], $res['response']);
+        $this->assertTrue($res['response']['hasNext']);
+        $this->assertSame(Message::findById($ids[0])['blockId'], $res['response']['nextBlockId']);
+    }
+
+    public function testGetListReceivedAfterInvalid(): void
+    {
+        $blockId = $this->send($this->client, 'Hi')['blockId'];
+
+        foreach (['-1', '1.5', 'abc', ['1']] as $value) {
+            $res = $this->client->get('/messages/getList', ['conversationId' => $this->conversationId, 'receivedAfter' => $value]);
+            $this->assertError(ErrorCode::INVALID_PARAMS, $res);
+        }
+        $res = $this->client->get('/messages/getList', ['conversationId' => $this->conversationId, 'receivedAfter' => '0', 'blockId' => $blockId]);
+        $this->assertError(ErrorCode::INVALID_PARAMS, $res);
+
+        // Доступ к переписке проверяется раньше параметров
+        [$carolClient] = $this->signup('carol');
+        $res = $carolClient->get('/messages/getList', ['conversationId' => $this->conversationId, 'receivedAfter' => 'abc']);
+        $this->assertError(ErrorCode::CONVERSATION_NOT_FOUND, $res);
+    }
+
+    public function testGetListReceivedAfterUpdatedBlocksLimit(): void
+    {
+        // Изменены старые сообщения в BLOCK_BATCH_MAX_COUNT + 1 блоках — отдаются только самые новые
+        $ids = $this->sendMany((Message::BLOCK_BATCH_MAX_COUNT + 1) * Message::BLOCK_SIZE);
+        $this->setCreatedAt($ids, 1000);
+        $blockIds = [];
+        foreach (array_chunk($ids, Message::BLOCK_SIZE) as $blockMessageIds) {
+            $blockIds[] = Message::edit($blockMessageIds[0], 'edited')['blockId'];
+        }
+
+        $res = $this->client->get('/messages/getList', ['conversationId' => $this->conversationId, 'receivedAfter' => '1000']);
+
+        $this->assertSuccess($res);
+        $this->assertSame([
+            'messages'        => [],
+            'nextBlockId'     => null,
+            'hasNext'         => false,
+            'updatedBlockIds' => array_slice(array_reverse($blockIds), 0, Message::BLOCK_BATCH_MAX_COUNT),
+        ], $res['response']);
+    }
+
     // ---- /messages/getBlock ----
 
     public function testGetBlock(): void
@@ -328,7 +409,78 @@ class MessagesTest extends TestCase
         $this->assertError(ErrorCode::NOT_AUTHENTICATED, $this->client()->get('/messages/getBlock', ['blockId' => 1]));
     }
 
+    // ---- /messages/getBlockBatch ----
+
+    public function testGetBlockBatch(): void
+    {
+        $ids = $this->sendMany(2 * Message::BLOCK_SIZE + 1);
+        [$first, $second, $third] = array_map(fn($i) => Message::findById($ids[$i])['blockId'], [0, Message::BLOCK_SIZE, 2 * Message::BLOCK_SIZE]);
+        $edited = $this->client->post('/messages/edit', ['messageId' => $ids[0], 'newText' => 'changed'])['response']['message'];
+        // Все сообщения блока удалены — блок остаётся пустым
+        DB::get()->prepare('DELETE FROM messages WHERE block_id = ?')->execute([$second]);
+        $carol = $this->insertUser('carol');
+        $foreign = Message::send(Conversation::findOrCreateSingle($this->bob, $carol)['conversationId'], $carol, 'Hi')['blockId'];
+
+        $res = $this->client->get('/messages/getBlockBatch', ['blockIds' => "$third,999,$first,$foreign,$second,$third"]);
+
+        $this->assertSuccess($res);
+        $this->assertSame([
+            'blocks' => [
+                ['blockId' => $third, 'conversationId' => $this->conversationId, 'messages' => [Message::findById($ids[2 * Message::BLOCK_SIZE])], 'updatedAt' => null],
+                [
+                    'blockId'        => $first,
+                    'conversationId' => $this->conversationId,
+                    'messages'       => array_map([Message::class, 'findById'], array_reverse(array_slice($ids, 0, Message::BLOCK_SIZE))),
+                    'updatedAt'      => $edited['updatedAt'],
+                ],
+                ['blockId' => $second, 'conversationId' => $this->conversationId, 'messages' => [], 'updatedAt' => null],
+            ],
+            'notFoundIds' => [999, $foreign],
+        ], $res['response']);
+        $this->assertUsersAction([$this->me, $this->bob], $res);
+    }
+
+    public function testGetBlockBatchArrayParam(): void
+    {
+        $blockId = $this->send($this->client, 'Hi')['blockId'];
+
+        $res = $this->client->get('/messages/getBlockBatch', ['blockIds' => [(string) $blockId]]);
+
+        $this->assertSame([$blockId], array_column($res['response']['blocks'], 'blockId'));
+    }
+
+    public function testGetBlockBatchNothingFound(): void
+    {
+        $res = $this->client->get('/messages/getBlockBatch', ['blockIds' => '5']);
+
+        $this->assertSame(['blocks' => [], 'notFoundIds' => [5]], $res['response']);
+        $this->assertFalse(array_key_exists('actions', $res));
+    }
+
+    public function testGetBlockBatchInvalidParams(): void
+    {
+        $tooMany = implode(',', range(1, Message::BLOCK_BATCH_MAX_COUNT + 1));
+        foreach ([[], ['blockIds' => ''], ['blockIds' => '1,x'], ['blockIds' => '-1'], ['blockIds' => $tooMany]] as $params) {
+            $this->assertError(ErrorCode::INVALID_PARAMS, $this->client->get('/messages/getBlockBatch', $params));
+        }
+        $this->assertSuccess($this->client->get('/messages/getBlockBatch', ['blockIds' => implode(',', range(1, Message::BLOCK_BATCH_MAX_COUNT))]));
+    }
+
+    public function testGetBlockBatchNotAuthenticated(): void
+    {
+        $this->assertError(ErrorCode::NOT_AUTHENTICATED, $this->client()->get('/messages/getBlockBatch', ['blockIds' => '1']));
+    }
+
     // ---- Хелперы ----
+
+    /** Ставит сообщениям createdAt (и updatedAt) = $ms. */
+    private function setCreatedAt(array $ids, int $ms): void
+    {
+        $stmt = DB::get()->prepare('UPDATE messages SET created_at = ' . DB::fromMs() . ', updated_at = created_at WHERE id = ?');
+        foreach ($ids as $id) {
+            $stmt->execute([$ms, $id]);
+        }
+    }
 
     private function send(ApiClient $client, string $text, ?string $clientId = null): array
     {

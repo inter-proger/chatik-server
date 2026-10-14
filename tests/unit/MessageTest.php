@@ -5,6 +5,9 @@ require_once __DIR__ . '/../../core/Message.php';
 
 class MessageTest extends TestCase
 {
+    /** Начало отсчёта createdAt в sendTimed() — заведомо в прошлом, правки получат время позже */
+    const T0 = 1700000000000;
+
     public function testFromRow(): void
     {
         $message = Message::fromRow([
@@ -107,6 +110,19 @@ class MessageTest extends TestCase
         $this->assertTrue($message['updatedAt'] >= $message['createdAt']);
     }
 
+    public function testEditSetsBlockUpdatedAt(): void
+    {
+        [$conversationId, $a] = $this->conversation();
+        $ids = $this->sendMany($conversationId, $a, Message::BLOCK_SIZE + 1);
+        $blocks = $this->blockIds();
+        $this->assertSame([null, null], $this->blockUpdatedAts());
+
+        $message = Message::edit($ids[1], 'edited');
+
+        $this->assertSame([$message['updatedAt'], null], $this->blockUpdatedAts());
+        $this->assertSame($message['updatedAt'], Message::findBlocksByIds([$blocks[0]], $a)[$blocks[0]]['updatedAt']);
+    }
+
     public function testToLastMessage(): void
     {
         [$conversationId, $a] = $this->conversation();
@@ -185,6 +201,168 @@ class MessageTest extends TestCase
         $this->assertNull($list['nextBlockId']);
     }
 
+    public function testFindBlocksByIds(): void
+    {
+        [$conversationId, $a, $b] = $this->conversation();
+        [$otherId, $c] = $this->conversation('c', 'd');
+        $ids = $this->sendMany($conversationId, $a, Message::BLOCK_SIZE + 2);
+        [$first, $second] = $this->blockIds();
+        $foreign = Message::send($otherId, $c, 'theirs')['blockId'];
+        $edited = Message::edit($ids[0], 'edited');
+
+        $blocks = Message::findBlocksByIds([$second, 999, $first, $foreign], $b);
+
+        $keys = array_keys($blocks);
+        sort($keys);
+        $this->assertSame([$first, $second], $keys, 'Missing and foreign blocks are skipped');
+        $this->assertSame([
+            'blockId'        => $first,
+            'conversationId' => $conversationId,
+            'messages'       => array_map([Message::class, 'findById'], array_reverse(array_slice($ids, 0, Message::BLOCK_SIZE))),
+            'updatedAt'      => $edited['updatedAt'],
+        ], $blocks[$first]);
+        $this->assertSame(array_reverse(array_slice($ids, Message::BLOCK_SIZE)), array_column($blocks[$second]['messages'], 'messageId'));
+        $this->assertNull($blocks[$second]['updatedAt']);
+        $this->assertSame([], Message::findBlocksByIds([], $a));
+    }
+
+    public function testFindBlocksByIdsEmptyBlock(): void
+    {
+        [$conversationId, $a] = $this->conversation();
+        $blockId = Message::send($conversationId, $a, 'Hi')['blockId'];
+        DB::get()->prepare('DELETE FROM messages WHERE block_id = ?')->execute([$blockId]);
+
+        $this->assertSame([], Message::findBlocksByIds([$blockId], $a)[$blockId]['messages']);
+    }
+
+    public function testFindListReceivedAfterNothingNew(): void
+    {
+        [$conversationId, $a] = $this->conversation();
+        $this->sendTimed($conversationId, $a, 3 * Message::BLOCK_SIZE + 5);
+
+        $this->assertSame(
+            ['messages' => [], 'nextBlockId' => null, 'hasNext' => false, 'updatedBlockIds' => []],
+            Message::findListReceivedAfter($conversationId, self::T0 + 1000 * 64, 40)
+        );
+    }
+
+    public function testFindListReceivedAfterNewWithinPage(): void
+    {
+        [$conversationId, $a] = $this->conversation();
+        $ids = $this->sendTimed($conversationId, $a, 3 * Message::BLOCK_SIZE + 5);
+
+        // Новые — 10 последних (createdAt строго больше отметки)
+        $list = Message::findListReceivedAfter($conversationId, self::T0 + 1000 * 54, 40);
+
+        $this->assertSame(array_reverse(array_slice($ids, 55)), array_column($list['messages'], 'messageId'));
+        $this->assertSame(Message::findById($ids[64]), $list['messages'][0]);
+        $this->assertFalse($list['hasNext']);
+        $this->assertNull($list['nextBlockId']);
+        $this->assertSame([], $list['updatedBlockIds']);
+    }
+
+    public function testFindListReceivedAfterNewBeyondPage(): void
+    {
+        [$conversationId, $a] = $this->conversation();
+        // Блоки: 20, 20, 20, 5 — страница из трёх новых блоков (45 сообщений), новых 50
+        $ids = $this->sendTimed($conversationId, $a, 3 * Message::BLOCK_SIZE + 5);
+        $blocks = $this->blockIds();
+
+        $list = Message::findListReceivedAfter($conversationId, self::T0 + 1000 * 14, 40);
+
+        // Страница совпадает с первой страницей без фильтра
+        $this->assertSame(Message::findList($conversationId, null, 40) + ['hasNext' => true], $list);
+        $this->assertSame(array_reverse(array_slice($ids, Message::BLOCK_SIZE)), array_column($list['messages'], 'messageId'));
+        $this->assertSame($blocks[0], $list['nextBlockId']);
+    }
+
+    public function testFindListReceivedAfterBoundaryAtPageEdge(): void
+    {
+        [$conversationId, $a] = $this->conversation();
+        // Новые — ровно страница (45): следующий блок целиком старый, кэш остаётся валидным
+        $ids = $this->sendTimed($conversationId, $a, 3 * Message::BLOCK_SIZE + 5);
+
+        $list = Message::findListReceivedAfter($conversationId, self::T0 + 1000 * 19, 40);
+
+        $this->assertSame(array_reverse(array_slice($ids, Message::BLOCK_SIZE)), array_column($list['messages'], 'messageId'));
+        $this->assertFalse($list['hasNext']);
+        $this->assertNull($list['nextBlockId']);
+        $this->assertSame([], $list['updatedBlockIds']);
+    }
+
+    public function testFindListReceivedAfterSkipsEmptyBlocks(): void
+    {
+        [$conversationId, $a] = $this->conversation();
+        // Блоки: 20, 20, 20, 5; второй и третий опустели — на странице 5 сообщений, за ней — первый блок
+        $ids = $this->sendTimed($conversationId, $a, 3 * Message::BLOCK_SIZE + 5);
+        $blocks = $this->blockIds();
+        DB::get()->prepare('DELETE FROM messages WHERE block_id IN (?, ?)')->execute([$blocks[1], $blocks[2]]);
+
+        $this->assertSame(
+            array_reverse(array_slice($ids, 3 * Message::BLOCK_SIZE)),
+            array_column(Message::findList($conversationId, null, 40)['messages'], 'messageId')
+        );
+
+        // Новое сообщение есть в первом блоке — за пустыми блоками
+        $list = Message::findListReceivedAfter($conversationId, self::T0 + 1000 * 18, 40);
+        $this->assertTrue($list['hasNext']);
+        $this->assertSame($blocks[0], $list['nextBlockId']);
+
+        // Первый блок целиком старый
+        $list = Message::findListReceivedAfter($conversationId, self::T0 + 1000 * 19, 40);
+        $this->assertFalse($list['hasNext']);
+        $this->assertCount(5, $list['messages']);
+    }
+
+    public function testFindListReceivedAfterAllEmptyPage(): void
+    {
+        [$conversationId, $a] = $this->conversation();
+        $this->sendTimed($conversationId, $a, 3 * Message::BLOCK_SIZE + 5);
+        $blocks = $this->blockIds();
+        DB::get()->prepare('DELETE FROM messages WHERE block_id IN (?, ?, ?)')->execute([$blocks[1], $blocks[2], $blocks[3]]);
+
+        $list = Message::findListReceivedAfter($conversationId, self::T0, 40);
+
+        $this->assertSame(['messages' => [], 'nextBlockId' => $blocks[0], 'hasNext' => true], $list);
+    }
+
+    public function testFindListReceivedAfterUpdatedBlocks(): void
+    {
+        [$conversationId, $a] = $this->conversation();
+        [$otherId, $c] = $this->conversation('c', 'd');
+        $ids = $this->sendTimed($conversationId, $a, 3 * Message::BLOCK_SIZE + 5);
+        $blocks = $this->blockIds();
+        Message::edit($ids[0], 'edited');
+        Message::edit($ids[50], 'edited');
+        // Правка нового сообщения тоже отмечает блок
+        Message::edit($ids[64], 'edited');
+        Message::edit(Message::send($otherId, $c, 'theirs')['messageId'], 'edited');
+
+        $list = Message::findListReceivedAfter($conversationId, self::T0 + 1000 * 60, 40);
+
+        $this->assertSame([$ids[64], $ids[63], $ids[62], $ids[61]], array_column($list['messages'], 'messageId'));
+        $this->assertSame('edited', $list['messages'][0]['text']);
+        $this->assertSame([$blocks[3], $blocks[2], $blocks[0]], $list['updatedBlockIds']);
+
+        // Отметка после правок — блоков нет
+        $after = Message::findById($ids[64])['updatedAt'];
+        $this->assertSame([], Message::findListReceivedAfter($conversationId, $after, 40)['updatedBlockIds']);
+    }
+
+    public function testFindListReceivedAfterUpdatedBlocksLimit(): void
+    {
+        [$conversationId, $a] = $this->conversation();
+        $count = (Message::BLOCK_BATCH_MAX_COUNT + 2) * Message::BLOCK_SIZE;
+        $ids = $this->sendTimed($conversationId, $a, $count);
+        for ($i = 0; $i < $count; $i += Message::BLOCK_SIZE) {
+            Message::edit($ids[$i], 'edited');
+        }
+
+        $list = Message::findListReceivedAfter($conversationId, self::T0 + 1000 * $count, 40);
+
+        $this->assertSame(array_slice(array_reverse($this->blockIds()), 0, Message::BLOCK_BATCH_MAX_COUNT), $list['updatedBlockIds']);
+    }
+
     public function testFindBlockConversationId(): void
     {
         [$conversationId, $a] = $this->conversation();
@@ -225,6 +403,24 @@ class MessageTest extends TestCase
             $ids[] = Message::send($conversationId, $senderId, "m$i")['messageId'];
         }
         return $ids;
+    }
+
+    /** Отправляет $count сообщений с createdAt = T0 + i секунд (i — номер сообщения); их id. */
+    private function sendTimed(int $conversationId, int $senderId, int $count): array
+    {
+        $ids = $this->sendMany($conversationId, $senderId, $count);
+        $stmt = DB::get()->prepare('UPDATE messages SET created_at = ' . DB::fromMs() . ', updated_at = created_at WHERE id = ?');
+        foreach ($ids as $i => $id) {
+            $stmt->execute([self::T0 + 1000 * $i, $id]);
+        }
+        return $ids;
+    }
+
+    /** updatedAt блоков (мс или null) по возрастанию id */
+    private function blockUpdatedAts(): array
+    {
+        $rows = DB::get()->query('SELECT ' . DB::ms('updated_at') . ' FROM message_blocks ORDER BY id')->fetchAll(PDO::FETCH_COLUMN);
+        return array_map(fn($v) => $v !== null ? (int) $v : null, $rows);
     }
 
     private function blockIds(): array

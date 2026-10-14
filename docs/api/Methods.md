@@ -41,5 +41,6 @@
 
 - [GET /messages/getList — Сообщения переписки](methods/Messages.md#get-messagesgetlist--сообщения-переписки)
 - [GET /messages/getBlock — Сообщения блока](methods/Messages.md#get-messagesgetblock--сообщения-блока)
+- [GET /messages/getBlockBatch — Сообщения нескольких блоков](methods/Messages.md#get-messagesgetblockbatch--сообщения-нескольких-блоков)
 - [POST /messages/send — Отправка сообщения](methods/Messages.md#post-messagessend--отправка-сообщения)
 - [POST /messages/edit — Редактирование сообщения](methods/Messages.md#post-messagesedit--редактирование-сообщения)

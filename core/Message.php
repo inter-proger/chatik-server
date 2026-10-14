@@ -15,6 +15,12 @@ class Message
     /** Максимальная длина clientId */
     const CLIENT_ID_MAX_LENGTH = 64;
 
+    /**
+     * Сколько блоков отдаёт /messages/getBlockBatch за раз; столько же, не больше, — updatedBlockIds
+     * в findListReceivedAfter(): если изменённых блоков меньше, клиент обновит их одним запросом
+     */
+    const BLOCK_BATCH_MAX_COUNT = 10;
+
     private static function select(): string
     {
         return 'SELECT id, conversation_id, block_id, sender_id, client_id, type, text, is_edited,
@@ -53,8 +59,43 @@ class Message
     }
 
     /**
+     * Блоки по списку id (MessageBlock: blockId, conversationId, messages — сначала новые, updatedAt в мс или null).
+     * Только блоки переписок, в которых состоит $viewerId; ключи — id блоков, порядок не гарантирован.
+     */
+    public static function findBlocksByIds(array $ids, int $viewerId): array
+    {
+        if (!$ids) {
+            return [];
+        }
+
+        // STRAIGHT_JOIN — сначала блоки по PRIMARY, потом членство: иначе оптимизатор идёт от переписок
+        // пользователя и перебирает все их блоки (оценивает ~25 блоков на переписку вместо тысяч)
+        $stmt = DB::get()->prepare(
+            'SELECT STRAIGHT_JOIN b.id, b.conversation_id, ' . DB::ms('b.updated_at') . ' AS updated_at
+             FROM message_blocks b
+             JOIN conversation_members m ON m.conversation_id = b.conversation_id AND m.user_id = ?
+             WHERE b.id IN (' . implode(',', array_fill(0, count($ids), '?')) . ')'
+        );
+        $stmt->execute([$viewerId, ...$ids]);
+        $rows = $stmt->fetchAll();
+
+        $messages = [];
+        foreach (self::findByBlocks(array_map('intval', array_column($rows, 'id'))) as $message) {
+            $messages[$message['blockId']][] = $message;
+        }
+
+        $blocks = [];
+        foreach ($rows as $row) {
+            $blocks[(int) $row['id']] = self::blockFromRow($row, $messages[(int) $row['id']] ?? []);
+        }
+
+        return $blocks;
+    }
+
+    /**
      * Сообщения переписки целыми блоками — от блока $fromBlockId (или самого нового) к старым,
-     * пока не наберётся не меньше $minCount сообщений или блоки не кончатся.
+     * пока не наберётся не меньше $minCount мест (messages_count) или блоки не кончатся.
+     * Места занимают и удалённые сообщения, поэтому живых сообщений может быть меньше $minCount, вплоть до 0.
      *
      * Возвращает ['messages' => сначала новые, 'nextBlockId' => следующий (более старый) блок или null].
      */
@@ -66,7 +107,7 @@ class Message
             $sql .= ' AND id <= ?';
             $params[] = $fromBlockId;
         }
-        // Неполным бывает только последний блок (в нём хотя бы одно сообщение), остальные полные:
+        // По местам неполным бывает только последний блок (в нём хотя бы одно), остальные полные:
         // первый блок + ceil($minCount / BLOCK_SIZE) полных + ещё один, чтобы узнать следующий
         $sql .= ' ORDER BY id DESC LIMIT ' . ((int) ceil($minCount / self::BLOCK_SIZE) + 2);
 
@@ -89,6 +130,51 @@ class Message
             'messages'    => self::findByBlocks($blockIds),
             'nextBlockId' => $nextBlockId,
         ];
+    }
+
+    /**
+     * Первая страница findList() с фильтром для догоняющей синхронизации: в messages — только сообщения
+     * с createdAt > $afterMs (мс). Возвращает ['messages', 'nextBlockId', 'hasNext'] и при hasNext = false —
+     * 'updatedBlockIds': блоки, сообщения которых менялись после $afterMs, по убыванию id, не больше BLOCK_BATCH_MAX_COUNT.
+     *
+     * hasNext — есть ли новые сообщения и за пределами страницы (клиенту нужно сбросить кэш). Тогда все
+     * сообщения страницы новые, и страница совпадает с первой страницей findList() без фильтра.
+     * Опирается на то, что created_at растёт вместе с id внутри переписки (send() под блокировкой переписки).
+     */
+    public static function findListReceivedAfter(int $conversationId, int $afterMs, int $minCount): array
+    {
+        $list = self::findList($conversationId, null, $minCount);
+        $messages = array_values(array_filter($list['messages'], fn($m) => $m['createdAt'] > $afterMs));
+
+        $hasNext = false;
+        // Сообщения страницы — по убыванию id: если новое самое старое, новые все
+        if ($list['nextBlockId'] !== null && count($messages) === count($list['messages'])) {
+            // Самое новое сообщение старше страницы — пустые блоки пропускаются
+            $stmt = DB::get()->prepare(
+                'SELECT ' . DB::ms('created_at') . ' FROM messages
+                 WHERE conversation_id = ? AND block_id <= ? ORDER BY id DESC LIMIT 1'
+            );
+            $stmt->execute([$conversationId, $list['nextBlockId']]);
+            $createdAt = $stmt->fetchColumn();
+            $hasNext = $createdAt !== false && (int) $createdAt > $afterMs;
+        }
+
+        $result = [
+            'messages'    => $messages,
+            'nextBlockId' => $hasNext ? $list['nextBlockId'] : null,
+            'hasNext'     => $hasNext,
+        ];
+
+        if (!$hasNext) {
+            $stmt = DB::get()->prepare(
+                'SELECT id FROM message_blocks WHERE conversation_id = ? AND updated_at > ' . DB::fromMs() . '
+                 ORDER BY id DESC LIMIT ' . self::BLOCK_BATCH_MAX_COUNT
+            );
+            $stmt->execute([$conversationId, $afterMs]);
+            $result['updatedBlockIds'] = array_map('intval', $stmt->fetchAll(PDO::FETCH_COLUMN));
+        }
+
+        return $result;
     }
 
     /**
@@ -162,6 +248,7 @@ class Message
 
     /**
      * Меняет текст сообщения, помечает его отредактированным и возвращает обновлённую сущность.
+     * Время изменения блока сообщения становится равным updatedAt сообщения.
      * Если сообщение — последнее в переписке, её updatedInfoAt становится равным updatedAt сообщения
      * (позиция не меняется); $isLast — было ли сообщение последним.
      */
@@ -180,6 +267,10 @@ class Message
 
             $db->prepare('UPDATE messages SET text = ?, is_edited = 1, updated_at = CURRENT_TIMESTAMP(3) WHERE id = ?')
                 ->execute([$text, $id]);
+
+            $db->prepare(
+                'UPDATE message_blocks b JOIN messages m ON m.block_id = b.id SET b.updated_at = m.updated_at WHERE m.id = ?'
+            )->execute([$id]);
 
             if ($isLast) {
                 $db->prepare(
@@ -249,6 +340,17 @@ class Message
             'isEdited'       => (bool) $row['is_edited'],
             'createdAt'      => (int) $row['created_at'],
             'updatedAt'      => (int) $row['updated_at'],
+        ];
+    }
+
+    /** MessageBlock из строки message_blocks (id, conversation_id, updated_at в мс или NULL) и сообщений блока. */
+    public static function blockFromRow(array $row, array $messages): array
+    {
+        return [
+            'blockId'        => (int) $row['id'],
+            'conversationId' => (int) $row['conversation_id'],
+            'messages'       => $messages,
+            'updatedAt'      => $row['updated_at'] !== null ? (int) $row['updated_at'] : null,
         ];
     }
 

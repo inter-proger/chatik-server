@@ -42,6 +42,7 @@ $routes = [
     '/conversations/getBatch' => __DIR__ . '/conversations/getBatch.php',
     '/messages/getList' => __DIR__ . '/messages/getList.php',
     '/messages/getBlock' => __DIR__ . '/messages/getBlock.php',
+    '/messages/getBlockBatch' => __DIR__ . '/messages/getBlockBatch.php',
     '/messages/send' => __DIR__ . '/messages/send.php',
     '/messages/edit' => __DIR__ . '/messages/edit.php',
     '/admin' => __DIR__ . '/admin/index.php',
