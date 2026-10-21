@@ -27,13 +27,10 @@ if ($text === null) {
     Response::error(ErrorCode::INVALID_TEXT);
 }
 
-$message = Message::send((int) $conversationId, (int) $userId, $text);
+$message = Message::send((int) $conversationId, (int) $userId, $text, null, $isNew, $readInfos);
 
-// Как в /messages/send: событие получают все участники, включая устройства отправителя
-WebSocket::publish(
-    Conversation::findMemberIds($message['conversationId']), 'messages', 'received',
-    ['message' => $message, 'lastMessage' => Message::toLastMessage($message)], [$message['senderId']]
-);
+// Как в /messages/send
+Message::publishReceived($message, $readInfos);
 
 Response::success([
     'message' => $message,

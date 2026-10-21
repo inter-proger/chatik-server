@@ -27,23 +27,23 @@ if ($clientId === null) {
     Response::error(ErrorCode::INVALID_CLIENT_ID);
 }
 
-$message = Message::send((int) $conversationId, $userId, $text, $clientId, $isNew);
+$message = Message::send((int) $conversationId, $userId, $text, $clientId, $isNew, $readInfos);
 
 // Повтор с тем же clientId возвращает уже отправленное сообщение — но только из этой же переписки
 if ($message['conversationId'] !== (int) $conversationId) {
     Response::error(ErrorCode::MESSAGE_CLIENT_ID_TAKEN);
 }
 
-// При повторе событие уже было разослано при первой отправке
+// При повторе событие уже было разослано при первой отправке; readInfo — текущий, версия не растёт
 if ($isNew) {
-    WebSocket::publish(
-        Conversation::findMemberIds($message['conversationId']), 'messages', 'received',
-        ['message' => $message, 'lastMessage' => Message::toLastMessage($message)], [$message['senderId']]
-    );
+    Message::publishReceived($message, $readInfos);
+} else {
+    $readInfos = Conversation::findReadInfos($message['conversationId'], [$userId]);
 }
 
 Response::success([
-    'message' => $message,
+    'message'  => $message,
+    'readInfo' => $readInfos[$userId],
 ], [
     Action::users([$message['senderId']]),
 ]);

@@ -1,6 +1,8 @@
 <?php
 
 require_once __DIR__ . '/DB.php';
+require_once __DIR__ . '/Conversation.php';
+require_once __DIR__ . '/WebSocket.php';
 
 class Message
 {
@@ -185,10 +187,16 @@ class Message
      * $clientId — идентификатор от клиента (null — сгенерировать UUID). Если у отправителя уже есть
      * сообщение с таким clientId, новое не создаётся: возвращается существующее (оно может быть
      * из другой переписки), $isNew = false.
+     *
+     * Обновляет прочтение: у отправителя указатель встаёт на сообщение, у остальных счётчики растут на 1,
+     * версия растёт у всех участников. $readInfos — ReadInfo участников (userId => ReadInfo) на версии
+     * этого изменения; при повторе — null.
      */
     public static function send(
-        int $conversationId, int $senderId, string $text, ?string $clientId = null, ?bool &$isNew = null
+        int $conversationId, int $senderId, string $text, ?string $clientId = null, ?bool &$isNew = null,
+        ?array &$readInfos = null
     ): array {
+        $readInfos = null;
         $clientId ??= self::uuid();
 
         $db = DB::get();
@@ -236,6 +244,9 @@ class Message
                  WHERE c.id = ?'
             )->execute([$id, $conversationId]);
 
+            self::updateReadState($conversationId, $senderId, $id);
+            $readInfos = Conversation::findReadInfos($conversationId);
+
             $db->commit();
         } catch (Throwable $e) {
             $db->rollBack();
@@ -247,23 +258,65 @@ class Message
     }
 
     /**
+     * Прочтение при новом сообщении $messageId (в транзакции send(), под блокировкой переписки):
+     * у отправителя указатель встаёт на сообщение и его непрочитанные в переписке вычитаются из общего счётчика,
+     * у остальных счётчики растут на 1; версия растёт у всех, строки участников получают новую версию.
+     */
+    private static function updateReadState(int $conversationId, int $senderId, int $messageId): void
+    {
+        $db = DB::get();
+
+        // Отдельно, а не в UPDATE: в multi-table UPDATE MySQL не гарантирует порядок присваиваний
+        $stmt = $db->prepare(
+            'SELECT unread_count FROM conversation_members WHERE conversation_id = ? AND user_id = ? FOR UPDATE'
+        );
+        $stmt->execute([$conversationId, $senderId]);
+        $delta = (int) $stmt->fetchColumn();
+
+        $memberIds = Conversation::findMemberIds($conversationId);
+        if (!$memberIds) {
+            return;
+        }
+
+        // Все строки users одним запросом по возрастанию id — параллельные отправки в разные переписки
+        // не сцепляются в дедлок. GREATEST — сломанный счётчик не должен блокировать отправку
+        $db->prepare(
+            'UPDATE users SET change_version = change_version + 1,
+                              total_unread_count = GREATEST(CAST(total_unread_count AS SIGNED) + IF(id = ?, CAST(? AS SIGNED), 1), 0)
+             WHERE id IN (' . implode(',', array_fill(0, count($memberIds), '?')) . ') ORDER BY id'
+        )->execute([$senderId, -$delta, ...$memberIds]);
+
+        $db->prepare(
+            'UPDATE conversation_members m JOIN users u ON u.id = m.user_id
+             SET m.change_version       = u.change_version,
+                 m.last_read_message_id = IF(m.user_id = ?, ?, m.last_read_message_id),
+                 m.unread_count         = IF(m.user_id = ?, 0, m.unread_count + 1)
+             WHERE m.conversation_id = ?'
+        )->execute([$senderId, $messageId, $senderId, $conversationId]);
+    }
+
+    /**
      * Меняет текст сообщения, помечает его отредактированным и возвращает обновлённую сущность.
      * Время изменения блока сообщения становится равным updatedAt сообщения.
      * Если сообщение — последнее в переписке, её updatedInfoAt становится равным updatedAt сообщения
-     * (позиция не меняется); $isLast — было ли сообщение последним.
+     * (позиция не меняется), а версия участников растёт; $isLast — было ли сообщение последним,
+     * $changeVersions — новые версии участников (userId => changeVersion) или null, если не последнее.
      */
-    public static function edit(int $id, string $text, ?bool &$isLast = null): array
+    public static function edit(int $id, string $text, ?bool &$isLast = null, ?array &$changeVersions = null): array
     {
+        $changeVersions = null;
+
         $db = DB::get();
         $db->beginTransaction();
         try {
             // Блокировка переписки — как в send(): «последнее ли сообщение» не изменится до коммита
             $stmt = $db->prepare(
-                'SELECT c.last_message_id FROM messages m JOIN conversations c ON c.id = m.conversation_id
+                'SELECT c.id, c.last_message_id FROM messages m JOIN conversations c ON c.id = m.conversation_id
                  WHERE m.id = ? FOR UPDATE OF c'
             );
             $stmt->execute([$id]);
-            $isLast = (int) $stmt->fetchColumn() === $id;
+            $conversation = $stmt->fetch();
+            $isLast = (int) $conversation['last_message_id'] === $id;
 
             $db->prepare('UPDATE messages SET text = ?, is_edited = 1, updated_at = CURRENT_TIMESTAMP(3) WHERE id = ?')
                 ->execute([$text, $id]);
@@ -278,6 +331,8 @@ class Message
                      SET c.updated_info_at = m.updated_at
                      WHERE c.last_message_id = ?'
                 )->execute([$id]);
+
+                $changeVersions = Conversation::bumpChangeVersion((int) $conversation['id']);
             }
 
             $db->commit();
@@ -377,6 +432,22 @@ class Message
             'text'      => $message['text'],
             'updatedAt' => $message['updatedAt'],
         ];
+    }
+
+    /**
+     * Рассылает messages/received о новом сообщении всем участникам, включая устройства отправителя.
+     * readInfo зависит от получателя — каждому своя доставка; $readInfos — из send().
+     */
+    public static function publishReceived(array $message, array $readInfos): void
+    {
+        $body = ['message' => $message, 'lastMessage' => self::toLastMessage($message)];
+
+        WebSocket::publishEach(array_map(
+            fn($memberId) => WebSocket::delivery(
+                [$memberId], 'messages', 'received', $body + ['readInfo' => $readInfos[$memberId]], [$message['senderId']]
+            ),
+            array_keys($readInfos)
+        ));
     }
 
     private static function findByBlocks(array $blockIds): array

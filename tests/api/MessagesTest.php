@@ -38,8 +38,29 @@ class MessagesTest extends TestCase
         $this->assertSame('text', $message['type']);
         $this->assertSame('Hello', $message['text']);
         $this->assertFalse($message['isEdited']);
-        $this->assertSame(['message'], array_keys($res['response']));
+        $this->assertSame(['message', 'readInfo'], array_keys($res['response']));
+        // Своё сообщение прочитано — указатель отправителя на нём
+        $this->assertSame([
+            'conversationId' => $this->conversationId, 'lastReadMessageId' => $message['messageId'],
+            'unreadCount' => 0, 'totalUnreadCount' => 0, 'changeVersion' => 2,
+        ], $res['response']['readInfo']);
         $this->assertUsersAction([$this->me], $res);
+    }
+
+    public function testSendRetryReturnsCurrentReadInfo(): void
+    {
+        $params = ['conversationId' => $this->conversationId, 'text' => 'one', 'clientId' => 'retry'];
+        $first = $this->client->post('/messages/send', $params)['response'];
+        $this->send($this->bobClient, 'two');
+
+        // Версия не растёт, а более позднее чужое сообщение уже учтено
+        $readInfo = $this->client->post('/messages/send', $params)['response']['readInfo'];
+        $this->assertSame([
+            'conversationId' => $this->conversationId, 'lastReadMessageId' => $first['message']['messageId'],
+            'unreadCount' => 1, 'totalUnreadCount' => 1, 'changeVersion' => 3,
+        ], $readInfo);
+        $this->assertSame(3, Conversation::findTotalUnreadCount($this->me)['changeVersion']);
+        $this->assertUnreadInvariant();
     }
 
     public function testSendRaisesConversation(): void

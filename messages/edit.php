@@ -34,15 +34,20 @@ if ($text === null) {
 // Текст не изменился — сообщение не трогаем и отредактированным не помечаем
 $body = ['message' => $message];
 if ($text !== $message['text']) {
-    $message = Message::edit($message['messageId'], $text, $isLast);
+    $message = Message::edit($message['messageId'], $text, $isLast, $changeVersions);
 
     // lastMessage — только если отредактировано последнее сообщение переписки
     $body = ['message' => $message] + ($isLast ? ['lastMessage' => Message::toLastMessage($message)] : []);
 
-    WebSocket::publish(
-        Conversation::findMemberIds($message['conversationId']), 'messages', 'edited',
-        $body, [$message['senderId']]
-    );
+    // Правка последнего сообщения поднимает версию участников — каждому своя доставка с его версией
+    $memberIds = $isLast ? array_keys($changeVersions) : Conversation::findMemberIds($message['conversationId']);
+    WebSocket::publishEach(array_map(
+        fn($memberId) => WebSocket::delivery(
+            [$memberId], 'messages', 'edited',
+            $body + ($isLast ? ['changeVersion' => $changeVersions[$memberId]] : []), [$message['senderId']]
+        ),
+        $memberIds
+    ));
 }
 
 Response::success($body, [

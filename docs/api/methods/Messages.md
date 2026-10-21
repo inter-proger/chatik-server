@@ -262,9 +262,10 @@
 
 ### Успешный ответ
 
-| Поле      | Тип     | Описание                                               |
-|-----------|---------|--------------------------------------------------------|
-| `message` | Message | Объект [Message](../Objects.md#объект-message) отправленного сообщения |
+| Поле       | Тип      | Описание                                               |
+|------------|----------|--------------------------------------------------------|
+| `message`  | Message  | Объект [Message](../Objects.md#объект-message) отправленного сообщения |
+| `readInfo` | ReadInfo | Состояние прочтения переписки для отправителя — объект [ReadInfo](../Objects.md#объект-readinfo) |
 
 ```json
 {
@@ -281,6 +282,13 @@
       "isEdited": false,
       "createdAt": 1790846400123,
       "updatedAt": 1790846400123
+    },
+    "readInfo": {
+      "conversationId": 1,
+      "lastReadMessageId": 15,
+      "unreadCount": 0,
+      "totalUnreadCount": 3,
+      "changeVersion": 118
     }
   },
   "actions": [
@@ -292,6 +300,8 @@
 Также отдаётся [action `users`](../General.md#action-users) с отправителем сообщения.
 
 Сообщение становится последним в переписке ([`lastMessage`](../Objects.md#объект-lastmessage)), и переписка поднимается наверх списка: её `positionUpdatedAt` равен `message.createdAt`. Клиент-отправитель поднимает переписку сразу по ответу, не дожидаясь события. Повтор с тем же `clientId` переписку не меняет.
+
+Своё сообщение прочитано: отправка отмечает прочитанной всю переписку до него ([прочтение](../Objects.md#прочтение)). Для новой отправки в `readInfo` `unreadCount = 0`, `lastReadMessageId = message.messageId`; отправитель обновляет счётчики сразу по ответу, по правилам [ReadInfo](../Objects.md#объект-readinfo). При повторе с тем же `clientId` отдаётся текущий ReadInfo переписки: версия не растёт, `lastReadMessageId` может быть больше `message.messageId`, а более поздние чужие сообщения уже учтены в счётчиках.
 
 Участникам переписки рассылается WebSocket-событие [`messages` / `received`](../websocket/Messages.md#messages--received--новое-сообщение).
 

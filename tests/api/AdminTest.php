@@ -185,9 +185,14 @@ class AdminTest extends TestCase
         $this->assertFalse(isset($res['actions']));
 
         // Событие получают все участники — в том числе сам отправитель, он отправлял не со своего устройства
-        foreach ([$meWs, $bobWs] as $ws) {
-            $this->assertEvent('messages', 'received', ['message' => $message, 'lastMessage' => Message::toLastMessage($message)], $ws->receive(), [$me]);
+        $readInfos = Conversation::findReadInfos($conversationId);
+        foreach ([$me => $meWs, $bob => $bobWs] as $userId => $ws) {
+            $this->assertEvent('messages', 'received', [
+                'message' => $message, 'lastMessage' => Message::toLastMessage($message), 'readInfo' => $readInfos[$userId],
+            ], $ws->receive(), [$me]);
         }
+        $this->assertSame($message['messageId'], $readInfos[$me]['lastReadMessageId']);
+        $this->assertSame(1, $readInfos[$bob]['unreadCount']);
     }
 
     public function testSendMessageUserNotFound(): void

@@ -35,6 +35,9 @@ class ConversationsTest extends TestCase
             'lastMessage'       => null,
             'positionUpdatedAt' => $createdAt,
             'updatedInfoAt'     => $createdAt,
+            'unreadCount'       => 0,
+            'lastReadMessageId' => 0,
+            'changeVersion'     => 1,
         ], $res['response']['conversation']);
         $this->assertUsersAction([$this->me, $bob], $res);
     }
@@ -81,7 +84,7 @@ class ConversationsTest extends TestCase
         $res = $this->client->get('/conversations/getList');
 
         $this->assertSuccess($res);
-        $this->assertSame(['conversations' => [], 'hasNext' => false], $res['response']);
+        $this->assertSame(['conversations' => [], 'hasNext' => false, 'totalUnreadCount' => 0, 'changeVersion' => 0], $res['response']);
         $this->assertFalse(array_key_exists('actions', $res));
     }
 
@@ -168,44 +171,66 @@ class ConversationsTest extends TestCase
         $this->assertSame([], $ids($this->client->get('/conversations/getList', ['positionUpdatedAfter' => 3000])));
     }
 
-    public function testGetListUpdatedInfoAfterWithCursor(): void
+    public function testGetListReturnsTotalUnreadCount(): void
     {
-        [$a, $b, $c, $d] = $this->createConversations(['a', 'b', 'c', 'd']);
-        $this->setTime($a, 'updated_info_at', 4000);
-        $this->setTime($b, 'updated_info_at', 2000);
-        $this->setTime($c, 'updated_info_at', 2000);
-        $this->setTime($d, 'updated_info_at', 1000);
+        [$bobClient, $bob] = $this->signup('bob');
+        $id = $this->client->post('/conversations/createSingle', ['userId' => $bob['userId']])['response']['conversation']['conversationId'];
+        $bobClient->post('/messages/send', ['conversationId' => $id, 'text' => 'Hi', 'clientId' => 'c1']);
 
-        $page = fn(array $params) => $this->client->get('/conversations/getList', $params + ['count' => 2])['response'];
+        $res = $this->client->get('/conversations/getList', ['count' => 1])['response'];
 
-        // По возрастанию updatedInfoAt, при равенстве — по возрастанию conversationId
-        $first = $page(['updatedInfoAfter' => 1000]);
-        $this->assertSame([$b, $c], array_column($first['conversations'], 'conversationId'));
-        $this->assertTrue($first['hasNext']);
-
-        // Изменение во время листания: b уходит в конец выдачи, а не сдвигает страницы
-        $this->setTime($b, 'updated_info_at', 5000);
-
-        $last = end($first['conversations']);
-        $second = $page(['updatedInfoAfter' => $last['updatedInfoAt'], 'updatedInfoAfterId' => $last['conversationId']]);
-        $this->assertSame([$a, $b], array_column($second['conversations'], 'conversationId'));
-        $this->assertFalse($second['hasNext']);
+        $this->assertSame(1, $res['totalUnreadCount']);
+        $this->assertSame(2, $res['changeVersion']);
+        $this->assertSame([1, 0, 2], [$res['conversations'][0]['unreadCount'], $res['conversations'][0]['lastReadMessageId'], $res['conversations'][0]['changeVersion']]);
     }
 
-    public function testGetListUpdatedInfoAfterTracksLastMessageEdit(): void
+    public function testGetListChangedAfterWithCursor(): void
     {
-        $bob  = $this->insertUser('bob');
-        $conversation = $this->client->post('/conversations/createSingle', ['userId' => $bob])['response']['conversation'];
-        $message = $this->client->post('/messages/send', [
-            'conversationId' => $conversation['conversationId'], 'text' => 'Hi', 'clientId' => 'c1',
-        ])['response']['message'];
+        [$a, $b, $c, $d] = $this->createConversations(['a', 'b', 'c', 'd']);
 
-        $this->assertSame([], $this->client->get('/conversations/getList', ['updatedInfoAfter' => $conversation['updatedInfoAt']])['response']['conversations']);
+        $page = fn(array $params) => $this->client->get('/conversations/getList', $params + ['count' => 2])['response'];
+        $ids  = fn(array $response) => array_column($response['conversations'], 'conversationId');
 
-        $edited = $this->client->post('/messages/edit', ['messageId' => $message['messageId'], 'newText' => 'Hi!'])['response']['message'];
+        // Создание — версии 1..4; по возрастанию версии
+        $first = $page(['changedAfter' => 1]);
+        $this->assertSame([$b, $c], $ids($first));
+        $this->assertTrue($first['hasNext']);
+        $this->assertSame(4, $first['changeVersion']);
 
-        $list = $this->client->get('/conversations/getList', ['updatedInfoAfter' => $conversation['updatedInfoAt']])['response']['conversations'];
-        $this->assertSame([$conversation['conversationId']], array_column($list, 'conversationId'));
+        // Изменение во время листания: b уходит в конец выдачи, а не сдвигает страницы
+        $this->client->post('/messages/send', ['conversationId' => $b, 'text' => 'Hi', 'clientId' => 'c1']);
+
+        $second = $page(['changedAfter' => end($first['conversations'])['changeVersion']]);
+        $this->assertSame([$d, $b], $ids($second));
+        $this->assertSame([4, 5], array_column($second['conversations'], 'changeVersion'));
+        $this->assertFalse($second['hasNext']);
+        $this->assertSame(5, $second['changeVersion']);
+
+        $this->assertSame([], $ids($page(['changedAfter' => 5])));
+    }
+
+    public function testGetListChangedAfterTracksReadAndLastMessageEdit(): void
+    {
+        [$bobClient, $bob] = $this->signup('bob');
+        $conversation = $this->client->post('/conversations/createSingle', ['userId' => $bob['userId']])['response']['conversation'];
+        $id = $conversation['conversationId'];
+        $message = $bobClient->post('/messages/send', ['conversationId' => $id, 'text' => 'Hi', 'clientId' => 'c1'])['response']['message'];
+        $synced = $this->client->get('/conversations/getList')['response']['changeVersion'];
+
+        // Прочтение на другом устройстве не меняет ни позицию, ни updatedInfoAt, но попадает в выдачу
+        $this->client->post('/conversations/markRead', ['conversationId' => $id, 'messageId' => $message['messageId']]);
+
+        $res = $this->client->get('/conversations/getList', ['changedAfter' => $synced])['response'];
+        $this->assertSame([$id], array_column($res['conversations'], 'conversationId'));
+        $this->assertSame([0, $message['messageId']], [$res['conversations'][0]['unreadCount'], $res['conversations'][0]['lastReadMessageId']]);
+        $this->assertSame(0, $res['totalUnreadCount']);
+        $synced = $res['changeVersion'];
+
+        // Правка последнего сообщения собеседником
+        $edited = $bobClient->post('/messages/edit', ['messageId' => $message['messageId'], 'newText' => 'Hi!'])['response']['message'];
+
+        $list = $this->client->get('/conversations/getList', ['changedAfter' => $synced])['response']['conversations'];
+        $this->assertSame([$id], array_column($list, 'conversationId'));
         $this->assertSame($edited['updatedAt'], $list[0]['updatedInfoAt']);
         $this->assertSame('Hi!', $list[0]['lastMessage']['text']);
     }
@@ -213,21 +238,21 @@ class ConversationsTest extends TestCase
     public function testGetListFilterParamsInvalid(): void
     {
         $invalid = [
-            ['positionUpdatedAfter' => '1', 'updatedInfoAfter' => '1'],
-            ['updatedInfoAfter' => '1', 'offset' => '0'],
-            ['updatedInfoAfterId' => '1'],
+            ['positionUpdatedAfter' => '1', 'changedAfter' => '1'],
+            ['changedAfter' => '1', 'offset' => '0'],
             ['positionUpdatedAfter' => '-1'],
             ['positionUpdatedAfter' => '1.5'],
-            ['updatedInfoAfter' => 'abc'],
-            ['updatedInfoAfter' => '1', 'updatedInfoAfterId' => 'x'],
+            ['changedAfter' => 'abc'],
+            ['changedAfter' => '-1'],
             ['positionUpdatedAfter' => ['1']],
         ];
         foreach ($invalid as $params) {
             $this->assertError(ErrorCode::INVALID_PARAMS, $this->client->get('/conversations/getList', $params));
         }
 
-        // positionUpdatedAfter совместим с offset
+        // positionUpdatedAfter совместим с offset, changedAfter — с count
         $this->assertSuccess($this->client->get('/conversations/getList', ['positionUpdatedAfter' => '0', 'offset' => '0']));
+        $this->assertSuccess($this->client->get('/conversations/getList', ['changedAfter' => '0', 'count' => '5']));
     }
 
     public function testGetListCountIsCappedAt100(): void
@@ -256,6 +281,76 @@ class ConversationsTest extends TestCase
     public function testGetListNotAuthenticated(): void
     {
         $this->assertError(ErrorCode::NOT_AUTHENTICATED, $this->client()->get('/conversations/getList'));
+    }
+
+    // ---- /conversations/markRead ----
+
+    public function testMarkRead(): void
+    {
+        [$bobClient, $bob] = $this->signup('bob');
+        $id = $this->client->post('/conversations/createSingle', ['userId' => $bob['userId']])['response']['conversation']['conversationId'];
+        $ids = array_map(
+            fn($i) => $bobClient->post('/messages/send', ['conversationId' => $id, 'text' => "m$i", 'clientId' => "c$i"])['response']['message']['messageId'],
+            [1, 2, 3]
+        );
+
+        $res = $this->client->post('/conversations/markRead', ['conversationId' => $id, 'messageId' => $ids[1]]);
+
+        $this->assertSuccess($res);
+        $this->assertSame(['readInfo' => [
+            'conversationId' => $id, 'lastReadMessageId' => $ids[1], 'unreadCount' => 1, 'totalUnreadCount' => 1, 'changeVersion' => 5,
+        ]], $res['response']);
+        $this->assertFalse(array_key_exists('actions', $res));
+        $this->assertSame(1, Conversation::findById($id, $this->me)['unreadCount']);
+        $this->assertUnreadInvariant();
+    }
+
+    public function testMarkReadOlderOrRepeatChangesNothing(): void
+    {
+        [$bobClient, $bob] = $this->signup('bob');
+        $id = $this->client->post('/conversations/createSingle', ['userId' => $bob['userId']])['response']['conversation']['conversationId'];
+        $first  = $bobClient->post('/messages/send', ['conversationId' => $id, 'text' => 'one', 'clientId' => 'c1'])['response']['message'];
+        $second = $bobClient->post('/messages/send', ['conversationId' => $id, 'text' => 'two', 'clientId' => 'c2'])['response']['message'];
+        $readInfo = $this->client->post('/conversations/markRead', ['conversationId' => $id, 'messageId' => $second['messageId']])['response']['readInfo'];
+
+        foreach ([$second, $first] as $message) {
+            $res = $this->client->post('/conversations/markRead', ['conversationId' => $id, 'messageId' => $message['messageId']]);
+            $this->assertSame(['readInfo' => $readInfo], $res['response']);
+        }
+    }
+
+    public function testMarkReadConversationNotFound(): void
+    {
+        [$daveClient] = $this->signup('dave');
+        $carol = $this->insertUser('carol');
+        $foreign = $daveClient->post('/conversations/createSingle', ['userId' => $carol])['response']['conversation']['conversationId'];
+        $messageId = $daveClient->post('/messages/send', ['conversationId' => $foreign, 'text' => 'Hi', 'clientId' => 'c1'])['response']['message']['messageId'];
+
+        foreach (['', 'abc', '-1', '999', (string) $foreign] as $conversationId) {
+            $res = $this->client->post('/conversations/markRead', ['conversationId' => $conversationId, 'messageId' => $messageId]);
+            $this->assertError(ErrorCode::CONVERSATION_NOT_FOUND, $res);
+        }
+    }
+
+    public function testMarkReadMessageNotFound(): void
+    {
+        [$daveClient, $dave] = $this->signup('dave');
+        $mine = $this->client->post('/conversations/createSingle', ['userId' => $dave['userId']])['response']['conversation']['conversationId'];
+        $foreign = $daveClient->post('/conversations/createSingle', ['userId' => $this->insertUser('carol')])['response']['conversation']['conversationId'];
+        $foreignMessageId = $daveClient->post('/messages/send', ['conversationId' => $foreign, 'text' => 'Hi', 'clientId' => 'c1'])['response']['message']['messageId'];
+
+        // Сообщение из другой переписки (даже доступной) неотличимо от несуществующего
+        foreach (['', 'abc', '-1', '999', (string) $foreignMessageId] as $messageId) {
+            $res = $this->client->post('/conversations/markRead', ['conversationId' => $mine, 'messageId' => $messageId]);
+            $this->assertError(ErrorCode::MESSAGE_NOT_FOUND, $res);
+        }
+    }
+
+    public function testMarkReadNotAuthenticated(): void
+    {
+        $res = $this->client()->post('/conversations/markRead', ['conversationId' => 1, 'messageId' => 1]);
+
+        $this->assertError(ErrorCode::NOT_AUTHENTICATED, $res);
     }
 
     // ---- /conversations/getBatch ----

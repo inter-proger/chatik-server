@@ -4,10 +4,11 @@
 
 Формат запросов и ответов — в [Общих сведениях](General.md), коды ошибок — в [Кодах ошибок](Errors.md).
 
-## [/global](methods/Global.md) — Старт приложения и WebSocket-токен
+## [/global](methods/Global.md) — Старт приложения, WebSocket-токен, счётчик непрочитанных
 
 - [GET /global/start — Старт работы приложения](methods/Global.md#get-globalstart--старт-работы-приложения)
 - [GET /global/getWebsocketToken — Токен подключения к WebSocket](methods/Global.md#get-globalgetwebsockettoken--токен-подключения-к-websocket)
+- [GET /global/getTotalUnreadCount — Общий счётчик непрочитанных](methods/Global.md#get-globalgettotalunreadcount--общий-счётчик-непрочитанных)
 
 ## [/auth](methods/Auth.md) — Регистрация, вход, выход
 
@@ -36,6 +37,7 @@
 - [POST /conversations/createSingle — Создание личной переписки](methods/Conversations.md#post-conversationscreatesingle--создание-личной-переписки)
 - [GET /conversations/getList — Список переписок](methods/Conversations.md#get-conversationsgetlist--список-переписок)
 - [GET /conversations/getBatch — Переписки по списку id](methods/Conversations.md#get-conversationsgetbatch--переписки-по-списку-id)
+- [POST /conversations/markRead — Отметка прочтения](methods/Conversations.md#post-conversationsmarkread--отметка-прочтения)
 
 ## [/messages](methods/Messages.md) — Сообщения
 

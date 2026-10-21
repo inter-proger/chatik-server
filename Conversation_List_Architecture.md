@@ -2,6 +2,8 @@
 
 Описывает, как переписка поднимается наверх списка при новом сообщении, как в списке показывается последнее сообщение и как клиент синхронизирует список после оффлайна. Реализовано; клиентский контракт — в `docs/api/` ([Conversation и LastMessage](docs/api/Objects.md#объект-conversation), [слияние переписки](docs/api/WebSocket.md#слияние-переписки), [`/conversations/getList` и `getBatch`](docs/api/methods/Conversations.md), [события `messages`](docs/api/websocket/Messages.md)), здесь — серверная сторона и обоснования. При расхождении верен `docs/api/`.
 
+> **Фильтр `updatedInfoAfter` / `updatedInfoAfterId` заменён на `changedAfter`** — курсор по версии пользователя, который ловит и изменения информации, и прочтение (см. [Unread_Messages_Architecture.md](Unread_Messages_Architecture.md)). Описание `updatedInfoAfter` ниже (сценарий 2 и связанное) — история решения; актуальный контракт — [синхронизация списка](docs/api/methods/Conversations.md#синхронизация-списка).
+
 ## Коротко
 
 - Новая сущность **LastMessage** — краткое представление последнего сообщения для списка чатов.

@@ -24,30 +24,42 @@ if ($count !== '' && (!ctype_digit((string) $count) || (int) $count <= 0)) {
 }
 
 $positionUpdatedAfter = Request::optionalUint('positionUpdatedAfter');
-$updatedInfoAfter     = Request::optionalUint('updatedInfoAfter');
-$updatedInfoAfterId   = Request::optionalUint('updatedInfoAfterId');
+$changedAfter         = Request::optionalUint('changedAfter');
 
 // Фильтры — для разных сценариев синхронизации, вместе не используются;
-// у updatedInfoAfter курсорная пагинация вместо offset
-if (($positionUpdatedAfter !== null && $updatedInfoAfter !== null)
-    || ($updatedInfoAfter !== null && $offset !== '')
-    || ($updatedInfoAfterId !== null && $updatedInfoAfter === null)) {
+// у changedAfter курсорная пагинация вместо offset
+if ($changedAfter !== null && ($positionUpdatedAfter !== null || $offset !== '')) {
     Response::error(ErrorCode::INVALID_PARAMS);
 }
 
 $offset = $offset === '' ? 0 : (int) $offset;
 $count  = $count === '' ? CONVERSATIONS_DEFAULT_COUNT : min((int) $count, CONVERSATIONS_MAX_COUNT);
 
-// Берём на одну больше, чтобы узнать, есть ли следующая страница
-$conversations = $updatedInfoAfter !== null
-    ? Conversation::findInfoUpdatedByMember($userId, $updatedInfoAfter, $updatedInfoAfterId, $count + 1)
-    : Conversation::findListByMember($userId, $offset, $count + 1, $positionUpdatedAfter);
+// Список и общий счётчик — из одного снимка транзакции, чтобы версия ответа соответствовала списку
+// (при READ COMMITTED у каждого запроса был бы свой снимок — уровень задаём явно)
+$db = DB::get();
+$db->exec('SET TRANSACTION ISOLATION LEVEL REPEATABLE READ');
+$db->beginTransaction();
+try {
+    // Берём на одну больше, чтобы узнать, есть ли следующая страница
+    $conversations = $changedAfter !== null
+        ? Conversation::findChangedByMember($userId, $changedAfter, $count + 1)
+        : Conversation::findListByMember($userId, $offset, $count + 1, $positionUpdatedAfter);
+    $total = Conversation::findTotalUnreadCount($userId);
+    $db->commit();
+} catch (Throwable $e) {
+    $db->rollBack();
+    throw $e;
+}
+
 $hasNext = count($conversations) > $count;
 $conversations = array_slice($conversations, 0, $count);
 
 Response::success([
-    'conversations' => $conversations,
-    'hasNext'       => $hasNext,
+    'conversations'    => $conversations,
+    'hasNext'          => $hasNext,
+    'totalUnreadCount' => $total['totalUnreadCount'],
+    'changeVersion'    => $total['changeVersion'],
 ], [
     Action::users(array_merge([], ...array_column($conversations, 'memberIds'))),
 ]);

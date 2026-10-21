@@ -69,10 +69,15 @@ class WsEventsTest extends TestCase
 
         $message = $this->client->post('/messages/send', ['conversationId' => $conversationId, 'text' => 'Привет', 'clientId' => 'c1'])['response']['message'];
 
-        // Отправитель тоже получает событие; lastMessage — новое последнее сообщение переписки
+        // Отправитель тоже получает событие; lastMessage — новое последнее сообщение переписки,
+        // readInfo — у каждого получателя свой
         $body = ['message' => $message, 'lastMessage' => Message::toLastMessage($message)];
-        $this->assertEvent('messages', 'received', $body, $bobs->receive(), [$this->me]);
-        $this->assertEvent('messages', 'received', $body, $mine->receive(), [$this->me]);
+        $this->assertEvent('messages', 'received', $body + ['readInfo' => [
+            'conversationId' => $conversationId, 'lastReadMessageId' => 0, 'unreadCount' => 1, 'totalUnreadCount' => 1, 'changeVersion' => 2,
+        ]], $bobs->receive(), [$this->me]);
+        $this->assertEvent('messages', 'received', $body + ['readInfo' => [
+            'conversationId' => $conversationId, 'lastReadMessageId' => $message['messageId'], 'unreadCount' => 0, 'totalUnreadCount' => 0, 'changeVersion' => 2,
+        ]], $mine->receive(), [$this->me]);
         $this->assertSame($body['lastMessage'], Conversation::findById($conversationId, $this->bob)['lastMessage']);
     }
 
@@ -126,8 +131,10 @@ class WsEventsTest extends TestCase
 
         $res = $this->client->post('/messages/edit', ['messageId' => $messageId, 'newText' => 'Hi!'])['response'];
 
-        // Отредактировано последнее сообщение — в событии новый lastMessage, как и в ответе
-        $this->assertEvent('messages', 'edited', $res, $bobs->receive(), [$this->me]);
+        // Отредактировано последнее сообщение — в событии новый lastMessage, как и в ответе,
+        // и новая версия получателя
+        $this->assertEvent('messages', 'edited', $res + ['changeVersion' => 3], $bobs->receive(), [$this->me]);
+        $this->assertSame(3, Conversation::findById($conversationId, $this->bob)['changeVersion']);
         $this->assertSame(Message::toLastMessage($res['message']), $res['lastMessage']);
     }
 
@@ -152,6 +159,61 @@ class WsEventsTest extends TestCase
         $this->client->post('/messages/edit', ['messageId' => $messageId, 'newText' => ' Hi ']);
 
         $this->assertNull($bobs->receive(0.3));
+    }
+
+    // ---- conversations / read ----
+
+    public function testRead(): void
+    {
+        $conversationId = Conversation::findOrCreateSingle($this->me, $this->bob)['conversationId'];
+        $messageId = Message::send($conversationId, $this->me, 'Hi')['messageId'];
+        $first  = $this->wsConnect($this->bobClient, $this->bob);
+        $second = $this->wsConnect($this->bobClient, $this->bob);
+        $mine   = $this->wsConnect($this->client, $this->me);
+
+        $readInfo = $this->bobClient->post('/conversations/markRead', ['conversationId' => $conversationId, 'messageId' => $messageId])['response']['readInfo'];
+
+        // Во все соединения читающего, включая вызвавшее; собеседнику — нет
+        $this->assertEvent('conversations', 'read', ['readInfo' => $readInfo], $first->receive());
+        $this->assertEvent('conversations', 'read', ['readInfo' => $readInfo], $second->receive());
+        $this->assertNull($mine->receive(0.3));
+    }
+
+    public function testReadNotSentWhenNothingChanged(): void
+    {
+        $conversationId = Conversation::findOrCreateSingle($this->me, $this->bob)['conversationId'];
+        $messageId = Message::send($conversationId, $this->me, 'Hi')['messageId'];
+        Conversation::markRead($conversationId, $this->bob, $messageId);
+        $bobs = $this->wsConnect($this->bobClient, $this->bob);
+
+        $this->assertSuccess($this->bobClient->post('/conversations/markRead', ['conversationId' => $conversationId, 'messageId' => $messageId]));
+
+        $this->assertNull($bobs->receive(0.3));
+    }
+
+    /** Правило непрерывности: каждое изменение приходит событием ровно со своей версией, без пропусков. */
+    public function testEventVersionsAreContiguous(): void
+    {
+        [$carolClient, $carol] = $this->signup('carol');
+        $bobs = $this->wsConnect($this->bobClient, $this->bob);
+
+        $withMe    = $this->client->post('/conversations/createSingle', ['userId' => $this->bob])['response']['conversation']['conversationId'];
+        $withCarol = $carolClient->post('/conversations/createSingle', ['userId' => $this->bob])['response']['conversation']['conversationId'];
+        $message   = $this->client->post('/messages/send', ['conversationId' => $withMe, 'text' => 'Hi', 'clientId' => 'c1'])['response']['message'];
+        $carolClient->post('/messages/send', ['conversationId' => $withCarol, 'text' => 'Hi', 'clientId' => 'c2']);
+        $this->client->post('/messages/edit', ['messageId' => $message['messageId'], 'newText' => 'Hi!']);
+        $this->bobClient->post('/conversations/markRead', ['conversationId' => $withMe, 'messageId' => $message['messageId']]);
+        $this->bobClient->post('/messages/send', ['conversationId' => $withCarol, 'text' => 'Reply', 'clientId' => 'c3']);
+
+        $versions = [];
+        for ($i = 0; $i < 7; $i++) {
+            $event = $bobs->receive();
+            $body  = $event['body'];
+            $versions[] = $body['readInfo']['changeVersion'] ?? $body['conversation']['changeVersion'] ?? $body['changeVersion'] ?? null;
+        }
+        $this->assertSame([1, 2, 3, 4, 5, 6, 7], $versions);
+        $this->assertSame(7, Conversation::findTotalUnreadCount($this->bob)['changeVersion']);
+        $this->assertUnreadInvariant();
     }
 
     public function testPendingConnectionGetsNoEvents(): void

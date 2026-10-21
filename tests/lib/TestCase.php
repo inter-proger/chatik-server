@@ -6,6 +6,7 @@ require_once __DIR__ . '/Fixtures.php';
 require_once __DIR__ . '/WsClient.php';
 require_once __DIR__ . '/../../core/DB.php';
 require_once __DIR__ . '/../../core/File.php';
+require_once __DIR__ . '/../../core/Conversation.php';
 
 /**
  * Базовый класс тестов. Перед каждым тестом база очищается,
@@ -186,6 +187,22 @@ abstract class TestCase
         $expected = ['group' => $group, 'event' => $event, 'body' => $body] + ($userIds !== null ? ['userIds' => $userIds] : []);
         unset($message['uid']);
         $this->assertSame($expected, $message, 'Unexpected event');
+    }
+
+    /**
+     * Счётчики непрочитанных согласованы с указателями прочтения, а общие — с суммой по перепискам:
+     * пересчёт (Conversation::recountUnread) ничего не меняет.
+     */
+    protected function assertUnreadInvariant(): void
+    {
+        $snapshot = fn() => [
+            DB::get()->query('SELECT conversation_id, user_id, unread_count FROM conversation_members ORDER BY conversation_id, user_id')->fetchAll(),
+            DB::get()->query('SELECT id, total_unread_count FROM users ORDER BY id')->fetchAll(),
+        ];
+
+        $before = $snapshot();
+        Conversation::recountUnread();
+        $this->assertSame($before, $snapshot(), 'Unread counters are out of sync');
     }
 
     /** Сервер закрыл соединение с кодом $code. */

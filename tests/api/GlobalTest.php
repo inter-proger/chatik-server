@@ -54,6 +54,30 @@ class GlobalTest extends TestCase
         $this->assertFalse($first === $second);
     }
 
+    // ---- /global/getTotalUnreadCount ----
+
+    public function testGetTotalUnreadCount(): void
+    {
+        [$client, $user] = $this->signup('me');
+        [$bobClient, $bob] = $this->signup('bob');
+        $this->assertSame(['totalUnreadCount' => 0, 'changeVersion' => 0], $client->get('/global/getTotalUnreadCount')['response']);
+
+        $id = $client->post('/conversations/createSingle', ['userId' => $bob['userId']])['response']['conversation']['conversationId'];
+        $bobClient->post('/messages/send', ['conversationId' => $id, 'text' => 'one', 'clientId' => 'c1']);
+        $bobClient->post('/messages/send', ['conversationId' => $id, 'text' => 'two', 'clientId' => 'c2']);
+
+        $res = $client->get('/global/getTotalUnreadCount');
+
+        $this->assertSuccess($res);
+        $this->assertSame(['totalUnreadCount' => 2, 'changeVersion' => 3], $res['response']);
+        $this->assertSame(['totalUnreadCount' => 0, 'changeVersion' => 3], $bobClient->get('/global/getTotalUnreadCount')['response']);
+    }
+
+    public function testGetTotalUnreadCountNotAuthenticated(): void
+    {
+        $this->assertError(ErrorCode::NOT_AUTHENTICATED, $this->client()->get('/global/getTotalUnreadCount'));
+    }
+
     // ---- /global/getWebsocketToken ----
 
     public function testGetWebsocketToken(): void

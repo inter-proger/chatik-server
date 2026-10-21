@@ -10,7 +10,7 @@
 
 ## Время
 
-Все поля, которые отдают хранимое на сервере время (`createdAt`, `updatedAt`, `positionUpdatedAt`, `updatedInfoAt` и т. п.), — Unix timestamp **в миллисекундах** (Int; на клиенте нужно 64-битное целое). Параметры запросов со временем (`positionUpdatedAfter`, `updatedInfoAfter`) — тоже в миллисекундах. Длительности (`expiresIn`, таймауты WebSocket) — в секундах, это указано в описании каждого поля.
+Все поля, которые отдают хранимое на сервере время (`createdAt`, `updatedAt`, `positionUpdatedAt`, `updatedInfoAt` и т. п.), — Unix timestamp **в миллисекундах** (Int; на клиенте нужно 64-битное целое). Параметры запросов со временем (`positionUpdatedAfter`, `receivedAfter`) — тоже в миллисекундах. Длительности (`expiresIn`, таймауты WebSocket) — в секундах, это указано в описании каждого поля.
 
 ## Формат ответа
 
