@@ -2,6 +2,8 @@
 
 Инструкция по установке ServerAi на чистый сервер. Пример — Ubuntu 24.04, nginx + PHP-FPM, MySQL 8, systemd; на других дистрибутивах меняются только имена пакетов и пути. Домен в примерах — `api.example.com`, каталог проекта — `/var/www/serverai`.
 
+Без своего сервера — с локальной машины через туннель: [«Локальный сервер через туннель Tuna»](#локальный-сервер-через-туннель-tuna).
+
 Из чего состоит сервер:
 
 - **REST API** — `index.php` под PHP-FPM, все запросы к API идут через него;
@@ -337,3 +339,110 @@ ss -ltnp | grep -E '8081|8082'
 - **`WEBSOCKET_INTERNAL_SECRET`** — уникальный для каждого окружения, не `change-me`.
 - **Тесты** (`php tests/run.php`) на боевом сервере не запускать: раннер пересоздаёт БД из `tests/config/db.php` и поднимает собственные серверы.
 - В файрволе открыть только 22, 80, 443; MySQL, 8081 и 8082 наружу не публикуются.
+
+## Локальный сервер через туннель Tuna
+
+Вариант без VPS и домена: сервер работает на своей машине (пример — macOS с Homebrew), наружу его выводит [Tuna](https://tuna.am/). Бесплатный тариф даёт один постоянный поддомен в `tuna.free`, HTTPS и WebSocket, но **только один активный туннель** — поэтому REST, статика и `/ws` сводятся локальным nginx на один порт, как в [шаге 7](#7-nginx). TLS делает Tuna, certbot не нужен. Сервер доступен, пока машина включена и не спит.
+
+```
+клиент ──https/wss──▶ Tuna ──▶ nginx 127.0.0.1:8090 ─┬─ /ws ──────▶ websocket/server.php :8081
+                                                     ├─ /static/ ─▶ файлы
+                                                     └─ остальное ▶ PHP-FPM 127.0.0.1:9000 (index.php)
+```
+
+**Пакеты и сервисы:**
+
+```bash
+brew install php mysql nginx yuccastream/tap/tuna
+brew services start mysql
+brew services start php
+brew services start nginx
+```
+
+БД и конфиги — как в шагах [4](#4-база-данных) и [5](#5-конфигурация). PHP-FPM из Homebrew слушает `127.0.0.1:9000`, лимиты загрузки — как в [шаге 6](#6-php-fpm) (`$(brew --prefix)/etc/php/<версия>/conf.d/99-serverai.ini`, затем `brew services restart php`).
+
+**nginx.** Отдельный server-блок на порту только для туннеля, `$(brew --prefix)/etc/nginx/servers/serverai-tunnel.conf` (`root` — свой каталог проекта):
+
+```nginx
+map $http_upgrade $connection_upgrade {
+    default upgrade;
+    ''      close;
+}
+
+server {
+    # Только локально — снаружи доступ лишь через туннель
+    listen 127.0.0.1:8090;
+    server_name _;
+
+    root /Users/<user>/Projects/ServerAi;
+
+    client_max_body_size 12m;
+
+    location /static/ {
+        try_files $uri =404;
+        expires 30d;
+        add_header X-Content-Type-Options nosniff;
+    }
+
+    location = /ws {
+        proxy_pass http://127.0.0.1:8081;
+        proxy_http_version 1.1;
+        proxy_set_header Upgrade $http_upgrade;
+        proxy_set_header Connection $connection_upgrade;
+        proxy_set_header Host $host;
+        proxy_read_timeout 75s;
+        proxy_send_timeout 75s;
+    }
+
+    # Админ-панель (пароль захардкожен, см. «Безопасность») наружу не публикуется
+    location ^~ /admin {
+        default_type application/json;
+        return 404 '{"status":0,"errorCode":404}';
+    }
+
+    location / {
+        include fastcgi_params;
+        fastcgi_param SCRIPT_FILENAME $document_root/index.php;
+        fastcgi_param SCRIPT_NAME /index.php;
+        fastcgi_pass 127.0.0.1:9000;
+    }
+}
+```
+
+```bash
+nginx -t && nginx -s reload
+```
+
+Публиковать в туннель только этот порт: dev-конфиг с `try_files $uri` и `root` в корне проекта отдаёт наружу `config/`, `db/`, `.git` и markdown-файлы.
+
+**Туннель.** Войти в Tuna (токен — в личном кабинете), занять поддомен в `tuna.free` и запустить:
+
+```bash
+tuna config save-token <токен>
+tuna http 8090 --subdomain=<поддомен>
+```
+
+**`config/app.php`** — внешние адреса через туннель, WS-сервер — за nginx:
+
+```php
+define('BASE_URL', 'https://<поддомен>.tuna.free');
+define('WEBSOCKET_URL', 'wss://<поддомен>.tuna.free/ws');
+define('WEBSOCKET_LISTEN', 'tcp://127.0.0.1:8081');
+```
+
+`BASE_URL` один на сервер: url загруженных файлов строятся от него, поэтому и клиенты в локальной сети получат адреса через туннель.
+
+**WebSocket-сервер** — в отдельном терминале, остановка — `Ctrl+C`:
+
+```bash
+php websocket/server.php
+```
+
+**Проверка** — как в [шаге 12](#12-проверка), с адресом туннеля:
+
+```bash
+curl -s https://<поддомен>.tuna.free/global/start
+curl -s https://<поддомен>.tuna.free/config/db.php
+```
+
+Перед тем как раздавать адрес: в локальной БД есть тестовые пользователи с паролями из [Test_Users.md](Test_Users.md) — через туннель под ними сможет войти любой. Для доступа только своим — `tuna http 8090 --basic-auth=логин:пароль` (клиенту тогда нужен заголовок `Authorization`).
