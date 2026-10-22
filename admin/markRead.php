@@ -29,6 +29,9 @@ if ($lastMessage === null) {
     $readInfo = Conversation::findReadInfos($conversationId, [$userId])[$userId];
 } else {
     $readInfo = Conversation::markRead($conversationId, $userId, $lastMessage['messageId'], $changed);
+    if ($readInfo === null) {
+        Response::error(ErrorCode::CONVERSATION_NOT_FOUND);
+    }
 
     // Как в /conversations/markRead
     if ($changed) {

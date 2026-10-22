@@ -2,6 +2,7 @@
 
 require_once __DIR__ . '/DB.php';
 require_once __DIR__ . '/Conversation.php';
+require_once __DIR__ . '/Request.php';
 require_once __DIR__ . '/WebSocket.php';
 
 class Message
@@ -191,11 +192,14 @@ class Message
      * Обновляет прочтение: у отправителя указатель встаёт на сообщение, у остальных счётчики растут на 1,
      * версия растёт у всех участников. $readInfos — ReadInfo участников (userId => ReadInfo) на версии
      * этого изменения; при повторе — null.
+     *
+     * null — отправитель не участник переписки: участие проверяется под блокировкой переписки, потому что
+     * из группы могли удалить после проверки в обработчике. Ничего не меняется.
      */
     public static function send(
         int $conversationId, int $senderId, string $text, ?string $clientId = null, ?bool &$isNew = null,
         ?array &$readInfos = null
-    ): array {
+    ): ?array {
         $readInfos = null;
         $clientId ??= self::uuid();
 
@@ -206,6 +210,19 @@ class Message
             // а повторы с одним clientId — создать дубль
             $stmt = $db->prepare('SELECT id FROM conversations WHERE id = ? FOR UPDATE');
             $stmt->execute([$conversationId]);
+
+            // Строка участника отправителя (шаг 2 порядка блокировок) — и проверка участия под блокировкой,
+            // и его непрочитанные для updateReadState(). До поиска по clientId: удалённый не должен получить
+            // через повтор и своё старое сообщение
+            $stmt = $db->prepare(
+                'SELECT unread_count FROM conversation_members WHERE conversation_id = ? AND user_id = ? FOR UPDATE'
+            );
+            $stmt->execute([$conversationId, $senderId]);
+            $senderUnread = $stmt->fetchColumn();
+            if ($senderUnread === false) {
+                $db->rollBack();
+                return null;
+            }
 
             $stmt = $db->prepare('SELECT id FROM messages WHERE sender_id = ? AND client_id = ?');
             $stmt->execute([$senderId, $clientId]);
@@ -244,7 +261,7 @@ class Message
                  WHERE c.id = ?'
             )->execute([$id, $conversationId]);
 
-            self::updateReadState($conversationId, $senderId, $id);
+            self::updateReadState($conversationId, $senderId, $id, (int) $senderUnread);
             $readInfos = Conversation::findReadInfos($conversationId);
 
             $db->commit();
@@ -261,17 +278,13 @@ class Message
      * Прочтение при новом сообщении $messageId (в транзакции send(), под блокировкой переписки):
      * у отправителя указатель встаёт на сообщение и его непрочитанные в переписке вычитаются из общего счётчика,
      * у остальных счётчики растут на 1; версия растёт у всех, строки участников получают новую версию.
+     * $senderUnread — непрочитанные отправителя в переписке, прочитанные под блокировкой его строки в send():
+     * отдельно, а не в UPDATE — в multi-table UPDATE MySQL не гарантирует порядок присваиваний.
      */
-    private static function updateReadState(int $conversationId, int $senderId, int $messageId): void
+    private static function updateReadState(int $conversationId, int $senderId, int $messageId, int $senderUnread): void
     {
         $db = DB::get();
-
-        // Отдельно, а не в UPDATE: в multi-table UPDATE MySQL не гарантирует порядок присваиваний
-        $stmt = $db->prepare(
-            'SELECT unread_count FROM conversation_members WHERE conversation_id = ? AND user_id = ? FOR UPDATE'
-        );
-        $stmt->execute([$conversationId, $senderId]);
-        $delta = (int) $stmt->fetchColumn();
+        $delta = $senderUnread;
 
         $memberIds = Conversation::findMemberIds($conversationId);
         if (!$memberIds) {
@@ -301,8 +314,11 @@ class Message
      * Если сообщение — последнее в переписке, её updatedInfoAt становится равным updatedAt сообщения
      * (позиция не меняется), а версия участников растёт; $isLast — было ли сообщение последним,
      * $changeVersions — новые версии участников (userId => changeVersion) или null, если не последнее.
+     *
+     * null — автор сообщения больше не участник переписки (проверяется под блокировкой, как в send()):
+     * править сообщение может только автор, поэтому проверяется именно он. Ничего не меняется.
      */
-    public static function edit(int $id, string $text, ?bool &$isLast = null, ?array &$changeVersions = null): array
+    public static function edit(int $id, string $text, ?bool &$isLast = null, ?array &$changeVersions = null): ?array
     {
         $changeVersions = null;
 
@@ -311,11 +327,17 @@ class Message
         try {
             // Блокировка переписки — как в send(): «последнее ли сообщение» не изменится до коммита
             $stmt = $db->prepare(
-                'SELECT c.id, c.last_message_id FROM messages m JOIN conversations c ON c.id = m.conversation_id
+                'SELECT c.id, c.last_message_id, m.sender_id FROM messages m JOIN conversations c ON c.id = m.conversation_id
                  WHERE m.id = ? FOR UPDATE OF c'
             );
             $stmt->execute([$id]);
             $conversation = $stmt->fetch();
+
+            if (!Conversation::lockMember((int) $conversation['id'], (int) $conversation['sender_id'])) {
+                $db->rollBack();
+                return null;
+            }
+
             $isLast = (int) $conversation['last_message_id'] === $id;
 
             $db->prepare('UPDATE messages SET text = ?, is_edited = 1, updated_at = CURRENT_TIMESTAMP(3) WHERE id = ?')
@@ -345,27 +367,14 @@ class Message
     }
 
     /**
-     * Приводит текст из запроса к виду для сохранения: невалидные UTF-8 байты заменяются,
-     * пробелы по краям обрезаются (включая юникодные и невидимые: NBSP, zero-width, BOM).
+     * Приводит текст сообщения из запроса к виду для сохранения (см. Request::normalizeText()).
      * null — если текст не строка, пустой или длиннее TEXT_MAX_LENGTH.
      */
     public static function normalizeText(mixed $text): ?string
     {
-        if (!is_string($text)) {
-            return null;
-        }
+        $text = Request::normalizeText($text, self::TEXT_MAX_LENGTH);
 
-        // Не \p{Cf} целиком: теги U+E0020–E007F в конце флагов регионов (Шотландия и т. п.) обрезать нельзя
-        $text = preg_replace(
-            '/^[\s\p{Z}\x{200B}-\x{200D}\x{2060}\x{FEFF}]+|[\s\p{Z}\x{200B}-\x{200D}\x{2060}\x{FEFF}]+$/u',
-            '',
-            mb_scrub($text, 'UTF-8')
-        );
-        if ($text === '' || mb_strlen($text) > self::TEXT_MAX_LENGTH) {
-            return null;
-        }
-
-        return $text;
+        return $text === '' ? null : $text;
     }
 
     /**
@@ -411,12 +420,13 @@ class Message
 
     /**
      * LastMessage — краткое представление последнего сообщения переписки для списка чатов:
-     * messageId, type, text, updatedAt (мс). Строка — колонки id, type, text, updated_at (мс).
+     * messageId, senderId, type, text, updatedAt (мс). Строка — колонки id, sender_id, type, text, updated_at (мс).
      */
     public static function lastMessageFromRow(array $row): array
     {
         return [
             'messageId' => (int) $row['id'],
+            'senderId'  => (int) $row['sender_id'],
             'type'      => $row['type'],
             'text'      => $row['text'],
             'updatedAt' => (int) $row['updated_at'],
@@ -428,6 +438,7 @@ class Message
     {
         return [
             'messageId' => $message['messageId'],
+            'senderId'  => $message['senderId'],
             'type'      => $message['type'],
             'text'      => $message['text'],
             'updatedAt' => $message['updatedAt'],

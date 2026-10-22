@@ -24,6 +24,11 @@ if ($message === null || $message['conversationId'] !== (int) $conversationId) {
 
 $readInfo = Conversation::markRead((int) $conversationId, $userId, $message['messageId'], $changed);
 
+// Удалён из группы после проверки выше — участие перепроверено под блокировкой
+if ($readInfo === null) {
+    Response::error(ErrorCode::CONVERSATION_NOT_FOUND);
+}
+
 // Во все соединения пользователя, включая вызвавшее, и остальным участникам; если ничего не изменилось — событий нет
 if ($changed) {
     Conversation::publishRead((int) $conversationId, $userId, $readInfo);

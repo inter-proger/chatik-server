@@ -34,7 +34,7 @@ $hasNext = count($conversations) > $count;
 $conversations = array_slice($conversations, 0, $count);
 
 // Участники сразу объектами — странице нужны имена собеседников
-$users = User::findByIds(array_merge([], ...array_column($conversations, 'memberIds')));
+$users = User::findByIds(Conversation::userIdsOf($conversations));
 ksort($users);
 
 Response::success([

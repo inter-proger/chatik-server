@@ -30,6 +30,7 @@ class ConversationsTest extends TestCase
             'type'              => 'single',
             'memberIds'         => [$this->me, $bob],
             'name'              => null,
+            'description'       => null,
             'avatar'            => null,
             'opponentUserId'    => $bob,
             'lastMessage'       => null,
@@ -84,7 +85,7 @@ class ConversationsTest extends TestCase
         $res = $this->client->get('/conversations/getList');
 
         $this->assertSuccess($res);
-        $this->assertSame(['conversations' => [], 'hasNext' => false, 'totalUnreadCount' => 0, 'changeVersion' => 0], $res['response']);
+        $this->assertSame(['conversations' => [], 'removedConversations' => [], 'hasNext' => false, 'totalUnreadCount' => 0, 'changeVersion' => 0], $res['response']);
         $this->assertFalse(array_key_exists('actions', $res));
     }
 
@@ -365,7 +366,7 @@ class ConversationsTest extends TestCase
 
         $this->assertSuccess($res);
         $this->assertSame(['membersReadMeta' => [['userId' => $bob['userId'], 'lastReadMessageId' => 0]]], $res['response']);
-        $this->assertFalse(array_key_exists('actions', $res));
+        $this->assertUsersAction([$bob['userId']], $res);
 
         // Прочтение сдвигает указатель
         $mine = $this->client->post('/messages/send', ['conversationId' => $id, 'text' => 'Hi', 'clientId' => 'c1'])['response']['message']['messageId'];

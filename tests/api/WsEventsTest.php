@@ -207,10 +207,10 @@ class WsEventsTest extends TestCase
 
         $this->bobClient->post('/conversations/markRead', ['conversationId' => $conversationId, 'messageId' => $messageId]);
 
-        // Во все соединения собеседника; без версии и без userIds
+        // Во все соединения собеседника; без версии, userIds — прочитавший
         $body = ['conversationId' => $conversationId, 'userId' => $this->bob, 'lastReadMessageId' => $messageId];
-        $this->assertEvent('conversations', 'memberRead', $body, $first->receive());
-        $this->assertEvent('conversations', 'memberRead', $body, $second->receive());
+        $this->assertEvent('conversations', 'memberRead', $body, $first->receive(), [$this->bob]);
+        $this->assertEvent('conversations', 'memberRead', $body, $second->receive(), [$this->bob]);
     }
 
     public function testMemberReadNotSentOnSend(): void

@@ -27,6 +27,17 @@ class RequestTest extends TestCase
         }
     }
 
+    public function testNormalizeText(): void
+    {
+        $this->assertSame('Hi 🚀', Request::normalizeText("\u{00A0} Hi 🚀\u{200B}\n", 10));
+        $this->assertSame('', Request::normalizeText("  \u{FEFF}", 10));
+        $this->assertSame('a?b', Request::normalizeText("a\xFFb", 10));
+        $this->assertSame(str_repeat('я', 3), Request::normalizeText(str_repeat('я', 3), 3));
+        $this->assertNull(Request::normalizeText(str_repeat('я', 4), 3));
+        $this->assertNull(Request::normalizeText(['a'], 10));
+        $this->assertNull(Request::normalizeText(null, 10));
+    }
+
     public function testParseUint(): void
     {
         $this->assertSame(0, Request::parseUint('0'));

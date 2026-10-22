@@ -255,7 +255,7 @@ class AdminTest extends TestCase
         $this->assertEvent('conversations', 'read', ['readInfo' => $readInfo], $meWs->receive());
         $this->assertEvent('conversations', 'memberRead', [
             'conversationId' => $conversationId, 'userId' => $me, 'lastReadMessageId' => $last,
-        ], $bobWs->receive());
+        ], $bobWs->receive(), [$me]);
         $this->assertUnreadInvariant();
 
         // Повтор ничего не меняет — событий нет

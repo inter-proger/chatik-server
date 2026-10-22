@@ -26,7 +26,8 @@ ServerAi — бэкенд мессенджера на чистом PHP без ф
 index.php               роутер REST API: карта «путь → файл обработчика»
 global/ auth/ profile/  обработчики методов — по одному файлу на метод,
 files/ users/           каталог = префикс URL (/messages/send → messages/send.php)
-conversations/ messages/
+conversations/ groups/
+messages/
 admin/                  админ-панель: index.php (страница) и её методы
 core/                   общий код: инфраструктура и сущности
 websocket/              WebSocket-сервер (server.php — точка входа)
@@ -79,7 +80,8 @@ docs/                   документация
 |-------|---------|-----------|
 | `User` | `users` (+ `files` для аватара) | Поиск по id, списку id, подстроке |
 | `File` | `files` | Сохранение изображения с уменьшенной копией, поиск — [Files.md](Files.md) |
-| `Conversation` | `conversations`, `conversation_members` | Личные переписки, списки и синхронизация, прочтение, версии пользователя |
+| `Conversation` | `conversations`, `conversation_members` | Личные переписки, списки и синхронизация (с метками удаления), прочтение, версии пользователя |
+| `Group` | `conversations`, `conversation_members`, `conversation_removed_members` | Группы: создание, состав, владелец, выход, GroupInfo — [Groups.md](Groups.md) |
 | `Message` | `messages`, `message_blocks` | Отправка, правка, выборка блоками, синхронизация кэша |
 
 Правила сущностей:
@@ -87,7 +89,7 @@ docs/                   документация
 - **`fromRow()`** — единственное место, где `snake_case` из БД превращается в `lowerCamelCase` API; связанные объекты (аватар, последнее сообщение) выбираются одним запросом через `JOIN` с префиксами колонок (`f_`, `lm_`) и собираются вложенными `fromRow()`.
 - **Время** выбирается сразу в миллисекундах — `DB::ms('created_at')`, параметры-миллисекунды сравниваются через `DB::fromMs()`.
 - **Объекты зависят от смотрящего.** `Conversation` собирается для конкретного пользователя (`$viewerId`): `opponentUserId`, `unreadCount`, `lastReadMessageId`, `changeVersion` у каждого участника свои. Поэтому WS-события с перепиской рассылаются отдельной доставкой каждому участнику.
-- **Транзакции открывают сущности**, а не обработчики (`Message::send()`, `Message::edit()`, `Conversation::markRead()`, `Conversation::findOrCreateSingle()`). Исключение — `conversations/getList.php`: список и общий счётчик читаются в одной транзакции `REPEATABLE READ`, чтобы быть из одного снимка. Порядок блокировок — в [DataModel.md](DataModel.md#транзакции-и-блокировки).
+- **Транзакции открывают сущности**, а не обработчики (`Message::send()`, `Message::edit()`, `Conversation::markRead()`, `Conversation::findOrCreateSingle()`, `Group::*`). Проверка участия в обработчике до транзакции не защищает от удаления из группы — изменяющие методы перепроверяют её под блокировкой переписки и возвращают `null`. Исключения — `conversations/getList.php` (список и общий счётчик) и `groups/getInfo.php` (версия и состав): читаются в одной транзакции `REPEATABLE READ`, чтобы быть из одного снимка. Порядок блокировок — в [DataModel.md](DataModel.md#транзакции-и-блокировки).
 - **Результаты изменения возвращаются через ссылочные параметры** (`&$isNew`, `&$created`, `&$readInfos`, `&$changeVersions`) — обработчику они нужны, чтобы решить, какие события и кому рассылать.
 
 ## WebSocket-события из API
@@ -114,3 +116,4 @@ API не держит соединений: после коммита он си�
 | [MessageSync.md](MessageSync.md) | Догоняющая синхронизация кэша сообщений, время изменения блока |
 | [UnreadMessages.md](UnreadMessages.md) | Счётчики непрочитанных, указатель прочтения, версия пользователя |
 | [ReadReceipts.md](ReadReceipts.md) | Прочтение другими участниками («галочки») |
+| [Groups.md](Groups.md) | Групповые чаты: создание, участники, владелец, выход, метки удаления |

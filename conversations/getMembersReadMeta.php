@@ -2,6 +2,7 @@
 
 require_once __DIR__ . '/../core/Auth.php';
 require_once __DIR__ . '/../core/Conversation.php';
+require_once __DIR__ . '/../core/Action.php';
 require_once __DIR__ . '/../core/Response.php';
 require_once __DIR__ . '/../core/ErrorCode.php';
 
@@ -14,7 +15,11 @@ if (!is_string($conversationId) || !ctype_digit($conversationId)
     Response::error(ErrorCode::CONVERSATION_NOT_FOUND);
 }
 
-// Action users не нужен: все userId — участники переписки, клиент знает их из memberIds
+$membersReadMeta = Conversation::findMembersReadMeta((int) $conversationId, $userId);
+
+// Состава группы в Conversation нет — участников отдаём action users
 Response::success([
-    'membersReadMeta' => Conversation::findMembersReadMeta((int) $conversationId, $userId),
+    'membersReadMeta' => $membersReadMeta,
+], [
+    Action::users(array_column($membersReadMeta, 'userId')),
 ]);

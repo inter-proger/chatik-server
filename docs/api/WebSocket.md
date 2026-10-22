@@ -28,19 +28,30 @@ WebSocket-соединение — канал, по которому серве�
 
 Порядок: сначала `auth` / `connected`, затем REST-запросы. Так события, произошедшие во время синхронизации, не теряются — но могут прийти раньше ответа REST и оказаться новее его данных. Поэтому:
 
-- события несут **полный объект** сущности (например, [Message](Objects.md#объект-message) целиком), а не изменённые поля;
-- клиент применяет события и данные REST **идемпотентно**: из двух версий одного объекта побеждает версия с большим `updatedAt`, при равенстве — любая. Повторное применение того же события ничего не меняет.
-Это правило — обязательное требование к будущим событиям: событие без полного объекта с `updatedAt` в протокол не добавляется. Исключения — переписка и прочтение: события [`messages`](websocket/Messages.md) несут не весь [Conversation](Objects.md#объект-conversation), а только её позицию, `lastMessage` и [ReadInfo](Objects.md#объект-readinfo), и сливаются по правилам ниже. Третье исключение — прочтение другими участниками: [`conversations` / `memberRead`](websocket/Conversations.md#conversations--memberread--участник-прочитал-переписку) несёт только указатель участника без `updatedAt`; указатель только растёт и сливается по максимуму (см. [MemberReadMeta](Objects.md#объект-memberreadmeta)).
+- событие несёт **версию изменения** и позволяет применить его **идемпотентно и независимо от порядка доставки**: повторное применение ничего не меняет, а более старая версия, пришедшая позже, не откатывает более новую;
+- клиент применяет события и данные REST по одним правилам слияния — по версии объекта.
 
-Второе обязательное требование: любое новое изменяемое поле переписки, кроме позиции, увеличивает [версию](Objects.md#версия-пользователя) `changeVersion` участников (иначе фильтр `changedAfter` его потеряет), а событие этого изменения несёт новую версию получателя (иначе [курсор синхронизации](#курсор-синхронизации) остановится на ней до переподключения). Указатели прочтения других участников в Conversation не входят, поэтому версию не поднимают: `memberRead` не несёт `changeVersion` и курсор не двигает.
+Это обязательное требование к будущим событиям. Допустимые формы события:
+
+1. **Полный объект или его независимо версионируемая часть** — клиент сливает по версии: [Message](Objects.md#объект-message) — по `updatedAt` (побеждает больший, при равенстве — любой), [GroupInfo](Objects.md#объект-groupinfo) — по `version`, [ReadInfo](Objects.md#объект-readinfo) — по `changeVersion`, части [Conversation](Objects.md#объект-conversation) в событиях [`messages`](websocket/Messages.md) — по [правилам слияния переписки](#слияние-переписки).
+2. **Ссылка и версия** — клиент перезапрашивает объект по REST. Версия такого события считается увиденной (попадает в [курсор](#курсор-синхронизации)) только после успешного ответа REST; пока запрос не удался, клиент хранит ссылку и повторяет запрос после каждого переподключения. Пример — [`groups` / `membersAdded`](websocket/Groups.md#groups--membersadded--участники-добавлены) для добавленного.
+
+Дельта без версии («добавлен X») недопустима: два таких события, пришедшие в обратном порядке, дали бы неверный результат. Исключение — значения, которые только растут и сливаются по максимуму: указатель прочтения в [`conversations` / `memberRead`](websocket/Conversations.md#conversations--memberread--участник-прочитал-переписку) (см. [MemberReadMeta](Objects.md#объект-memberreadmeta)).
+
+У каждой сущности, которую меняет событие, есть **путь восстановления** после потерянного события — одно из двух:
+
+- **синхронизация по курсору** — изменение поднимает версию пользователя, и [`getList`](methods/Conversations.md#синхронизация-списка) с `changedAfter` его вернёт: Conversation, ReadInfo, [RemovedConversation](Objects.md#объект-removedconversation);
+- **перезапрос при открытии и после переподключения** — сущность нужна только на открытом экране: клиент запрашивает её при открытии и после каждого `auth` / `connected`, пока экран открыт; сохранённая копия закрытого экрана может устареть до следующего открытия: MemberReadMeta, GroupInfo.
+
+Второе обязательное требование: любое новое изменяемое поле переписки, кроме позиции, увеличивает [версию](Objects.md#версия-пользователя) `changeVersion` участников (иначе фильтр `changedAfter` его потеряет), а событие этого изменения несёт новую версию получателя (иначе [курсор синхронизации](#курсор-синхронизации) остановится на ней до переподключения). Указатели прочтения других участников и состав группы в Conversation не входят, поэтому версию не поднимают: `memberRead` и события [GroupInfo](Objects.md#объект-groupinfo) остальным участникам группы не несут `changeVersion` и курсор не двигают.
 
 ### Слияние переписки
 
-У [Conversation](Objects.md#объект-conversation) три независимые версии: позиция в списке (`positionUpdatedAt` вместе с `lastMessage`), информация (`updatedInfoAt`) и прочтение (`changeVersion`). Правило «побеждает больший `updatedAt`» к ней не применяется. Вместо него клиент применяет по порядку четыре правила к каждой пришедшей версии переписки — из [`getList`](methods/Conversations.md#get-conversationsgetlist--список-переписок), [`getBatch`](methods/Conversations.md#get-conversationsgetbatch--переписки-по-списку-id), [`createSingle`](methods/Conversations.md#post-conversationscreatesingle--создание-личной-переписки), события [`conversations` / `singleCreated`](websocket/Conversations.md#conversations--singlecreated--создана-личная-переписка) и событий [`messages` / `received` и `edited`](websocket/Messages.md) (у них `positionUpdatedAt` = `message.createdAt`):
+У [Conversation](Objects.md#объект-conversation) три независимые версии: позиция в списке (`positionUpdatedAt` вместе с `lastMessage`), информация (`updatedInfoAt`) и прочтение (`changeVersion`). Правило «побеждает больший `updatedAt`» к ней не применяется. Вместо него клиент применяет по порядку четыре правила к каждой пришедшей версии переписки — из [`getList`](methods/Conversations.md#get-conversationsgetlist--список-переписок), [`getBatch`](methods/Conversations.md#get-conversationsgetbatch--переписки-по-списку-id), [`createSingle`](methods/Conversations.md#post-conversationscreatesingle--создание-личной-переписки), события [`conversations` / `singleCreated`](websocket/Conversations.md#conversations--singlecreated--создана-личная-переписка), ответа [`/groups/create`](methods/Groups.md#post-groupscreate--создание-группы), события [`groups` / `created`](websocket/Groups.md#groups--created--группа-создана) и событий [`messages` / `received` и `edited`](websocket/Messages.md) (у них `positionUpdatedAt` = `message.createdAt`):
 
 1. **Позиция.** Версия позиции — пара `(positionUpdatedAt, lastMessage.messageId)`, сравнивается лексикографически; у `lastMessage: null` — `messageId = 0`. Если пришедшая пара **строго больше** локальной — взять `positionUpdatedAt` и `lastMessage` целиком и переместить переписку по сортировке. `messageId` в паре нужен для сообщений, отправленных в одну миллисекунду: id сообщений внутри переписки растут строго.
 2. **Текст последнего сообщения.** Если после шага 1 `lastMessage.messageId` пришедшей версии совпадает с локальным, а `lastMessage.updatedAt` больше локального — взять `lastMessage`. Так правка применяется только к тому же сообщению и не откатывается более старой правкой.
-3. **Информация.** Только для полного объекта Conversation (ответы REST, `singleCreated`): если `updatedInfoAt` больше локального — взять `memberIds`, `name`, `avatar`, `opponentUserId`, `updatedInfoAt`. События `messages` `updatedInfoAt` не меняют: иначе локальная версия «обогнала» бы не пришедшие изменения названия или участников, и следующий ответ REST с тем же `updatedInfoAt` их бы не применил.
+3. **Информация.** Только для полного объекта Conversation (ответы REST, `singleCreated`, `groups` / `created`): если `updatedInfoAt` больше локального — взять `memberIds`, `name`, `description`, `avatar`, `opponentUserId`, `updatedInfoAt`. События `messages` `updatedInfoAt` не меняют: иначе локальная версия «обогнала» бы не пришедшие изменения названия или участников, и следующий ответ REST с тем же `updatedInfoAt` их бы не применил.
 4. **Прочтение.** Для полного объекта Conversation и для [ReadInfo](Objects.md#объект-readinfo) (ответы `markRead` и `/messages/send`, события `conversations` / `read` и `messages` / `received`): если пришедший `changeVersion` больше локального — взять `unreadCount`, `lastReadMessageId`, `changeVersion`. Информацию по `changeVersion` не сливают: события `messages` несут версию, но не информацию, и применённая из события версия отбросила бы ещё не пришедшие изменения информации. Версия переписки растёт и при изменении информации — тогда поля прочтения приходят те же, и их повторное применение безвредно. Общий счётчик `totalUnreadCount` сливается отдельно, по своей локальной версии (см. [ReadInfo](Objects.md#объект-readinfo)).
 
 При повторе той же версии ни одно правило не срабатывает.
@@ -59,6 +70,9 @@ WebSocket-соединение — канал, по которому серве�
 | Новое сообщение | [`messages` / `received`](websocket/Messages.md#messages--received--новое-сообщение) | `readInfo.changeVersion` |
 | Правка последнего сообщения | [`messages` / `edited`](websocket/Messages.md#messages--edited--сообщение-отредактировано) | `changeVersion` |
 | Создание личной переписки | [`conversations` / `singleCreated`](websocket/Conversations.md#conversations--singlecreated--создана-личная-переписка) | `conversation.changeVersion` |
+| Создание группы | [`groups` / `created`](websocket/Groups.md#groups--created--группа-создана) | `conversation.changeVersion` |
+| Добавление в группу | [`groups` / `membersAdded`](websocket/Groups.md#groups--membersadded--участники-добавлены) — добавленному | `changeVersion`, после успешного `getBatch` |
+| Удаление из группы, выход | [`groups` / `membersRemoved`](websocket/Groups.md#groups--membersremoved--участники-удалены), [`memberLeft`](websocket/Groups.md#groups--memberleft--участник-вышел) — удалённому, вышедшему | `removedConversation.changeVersion` |
 
 **Правило непрерывности.** Событие с версией `v` всегда применяется по правилам слияния. Если `v > syncedChangeVersion`, `v` добавляется в `seenVersions`. Затем, пока `syncedChangeVersion + 1` есть в `seenVersions`, курсор растёт на 1, а версия убирается из множества. События, пришедшие во время синхронизации, обрабатываются так же; после последней страницы `changedAfter` курсор встаёт на версию ответа, версии не выше него убираются из `seenVersions`, и курсор снова продвигается по правилу.
 
@@ -78,7 +92,7 @@ WebSocket-соединение — канал, по которому серве�
 | `group`   | String | Да           | Группа событий (`auth`, `events`, `conversations`, `messages`, …)                  |
 | `event`   | String | Да           | Событие внутри группы                                                              |
 | `body`    | Object | Да           | Данные события; состав зависит от пары `group` + `event`. Если данных нет — пустой объект `{}` |
-| `userIds` | Int[]  | Нет          | Только в событиях сервера: идентификаторы пользователей, фигурирующих в событии (участники переписки, отправитель сообщения и т. п.), без повторов, по возрастанию. Если таких пользователей нет — поле отсутствует. Клиент обрабатывает его так же, как [action `users`](General.md#action-users): недостающих в кэше (или устаревших) пользователей запрашивает через [`/users/getBatch`](methods/Users.md#get-usersgetbatch--пользователи-по-списку-id) пачками до 100 |
+| `userIds` | Int[]  | Нет          | Только в событиях сервера: идентификаторы пользователей, фигурирующих в событии (участники переписки, отправитель сообщения и т. п.), без повторов, по возрастанию. Если таких пользователей нет — поле отсутствует. Клиент обрабатывает его так же, как [action `users`](General.md#action-users): недостающих в кэше (или устаревших) пользователей запрашивает через [`/users/getBatch`](methods/Users.md#get-usersgetbatch--пользователи-по-списку-id) пачками до 100. Событие может перечислять только пользователей, существенных для него: события [`groups`](websocket/Groups.md) — только затронутых изменением, а не всех участников из `groupInfo` |
 
 ```json
 {
@@ -160,6 +174,14 @@ Heartbeat инициирует **клиент**: каждые 25 секунд о
 - [`conversations` / `singleCreated` — создана личная переписка](websocket/Conversations.md#conversations--singlecreated--создана-личная-переписка)
 - [`conversations` / `read` — переписка прочитана](websocket/Conversations.md#conversations--read--переписка-прочитана)
 - [`conversations` / `memberRead` — участник прочитал переписку](websocket/Conversations.md#conversations--memberread--участник-прочитал-переписку)
+
+### [`groups`](websocket/Groups.md) — Групповые переписки
+
+- [`groups` / `created` — группа создана](websocket/Groups.md#groups--created--группа-создана)
+- [`groups` / `membersAdded` — участники добавлены](websocket/Groups.md#groups--membersadded--участники-добавлены)
+- [`groups` / `membersRemoved` — участники удалены](websocket/Groups.md#groups--membersremoved--участники-удалены)
+- [`groups` / `memberLeft` — участник вышел](websocket/Groups.md#groups--memberleft--участник-вышел)
+- [`groups` / `ownerChanged` — владелец сменился](websocket/Groups.md#groups--ownerchanged--владелец-сменился)
 
 ### [`messages`](websocket/Messages.md) — Сообщения
 

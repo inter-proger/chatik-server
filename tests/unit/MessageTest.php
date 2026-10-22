@@ -129,7 +129,7 @@ class MessageTest extends TestCase
         $message = Message::send($conversationId, $a, 'Hello');
 
         $this->assertSame(
-            ['messageId' => $message['messageId'], 'type' => 'text', 'text' => 'Hello', 'updatedAt' => $message['updatedAt']],
+            ['messageId' => $message['messageId'], 'senderId' => $a, 'type' => 'text', 'text' => 'Hello', 'updatedAt' => $message['updatedAt']],
             Message::toLastMessage($message)
         );
     }

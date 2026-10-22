@@ -12,13 +12,14 @@ users ─┬─< files                      (files.user_id — кто загру
        ├─────┘ users.avatar_file_id ──> files            ON DELETE SET NULL
        │
        ├─< conversation_members >─ conversations ─< message_blocks ─< messages
-       │                              │  avatar_file_id ──> files     ON DELETE SET NULL
-       │                              └─ last_message_id ──> messages ON DELETE SET NULL
+       ├─< conversation_removed_members >─┤  avatar_file_id ──> files     ON DELETE SET NULL
+       │                              ├─ last_message_id ──> messages ON DELETE SET NULL
+       │                              └─ owner_id ──> users           ON DELETE SET NULL
        ├─< messages (sender_id)
        └─< websocket_tokens
 ```
 
-Удаление пользователя каскадом удаляет его файлы (записи, не файлы на диске), членство в переписках, отправленные сообщения и WS-токены. Удаление переписки — её участников, блоки и сообщения. Методов удаления в API пока нет.
+Удаление пользователя каскадом удаляет его файлы (записи, не файлы на диске), членство в переписках и метки удаления, отправленные сообщения и WS-токены; у групп, где он владелец, `owner_id` становится `NULL`. Удаление переписки — её участников, метки удаления, блоки и сообщения. Методов удаления в API пока нет.
 
 ## Таблицы
 
@@ -56,8 +57,12 @@ users ─┬─< files                      (files.user_id — кто загру
 | Колонка | Тип | Описание |
 |---------|-----|----------|
 | `id` | INT UNSIGNED, PK | `conversationId` |
-| `type` | VARCHAR(16) | `single` (личная) или `group` (групповые пока не создаются) |
-| `name`, `avatar_file_id` | | Только для `group` |
+| `type` | VARCHAR(16) | `single` (личная) или `group` (групповая) |
+| `name` | VARCHAR(128) NULL | Название группы; для `single` — `NULL`. Лимит — как у `users.name` |
+| `description` | VARCHAR(1024) NULL | Описание группы; `NULL` — нет |
+| `avatar_file_id` | → `files.id` SET NULL | Аватар группы |
+| `owner_id` | → `users.id` SET NULL | Владелец группы — ровно один, поэтому колонка, а не роль участника. `NULL` у группы — участников не осталось |
+| `group_info_version` | INT UNSIGNED | Версия GroupInfo (состав и роли): +1 при каждом изменении состава или владельца, под блокировкой переписки. У `single` — 0. Своя шкала группы, не версия пользователя — [Groups.md](Groups.md#модель-данных) |
 | `single_key` | VARCHAR(32), UNIQUE | Для `single`: `"<меньший userId>_<больший userId>"` — не больше одной личной переписки на пару. Параллельное создание ловится по ошибке дубликата `1062` |
 | `last_message_id` | → `messages.id` SET NULL | Последнее сообщение (`lastMessage` в API) |
 | `created_at` | DATETIME(3) | |
@@ -74,9 +79,24 @@ users ─┬─< files                      (files.user_id — кто загру
 | `last_read_message_id` | INT UNSIGNED | Указатель прочтения: сообщения с `id` не больше прочитаны. Только растёт |
 | `unread_count` | INT UNSIGNED | Непрочитанные в переписке: чужие сообщения с `id > last_read_message_id` |
 | `change_version` | INT UNSIGNED | `users.change_version` участника на момент последнего изменения переписки для него. Ключ `(user_id, change_version)` — выборка изменившихся переписок |
-| `created_at` | DATETIME(3) | |
+| `joined_after_message_id` | INT UNSIGNED | `last_message_id` переписки на момент вступления, не меняется: в группе статус «прочитано» считается только по сообщениям после него ([Groups.md](Groups.md#прочтение-для-нового-участника)). У создателей и участников личных переписок — 0 |
+| `created_at` | DATETIME(3) NOT NULL | Время вступления. Позиция группы для участника — позже из времени последнего сообщения и вступления ([Groups.md](Groups.md#позиция-в-списке)) |
+
+При удалении из группы и выходе строка удаляется, вместо неё появляется метка в `conversation_removed_members`.
 
 Модель прочтения — [UnreadMessages.md](UnreadMessages.md#модель-данных), прочтение другими участниками — [ReadReceipts.md](ReadReceipts.md).
+
+### `conversation_removed_members` — метки удаления
+
+Пользователь перестал быть участником группы (удалён или вышел) — чтобы синхронизация `changedAfter` вернула ему это изменение, хотя строки участника больше нет. Устройство — [Groups.md](Groups.md#conversation_removed_members--метки-удаления).
+
+| Колонка | Тип | Описание |
+|---------|-----|----------|
+| `conversation_id`, `user_id` | PK (пара), → CASCADE | |
+| `change_version` | INT UNSIGNED | `users.change_version` на момент удаления — та же шкала, что у `conversation_members`. Ключ `(user_id, change_version)` |
+| `created_at` | DATETIME(3) | |
+
+Пара (переписка, пользователь) — либо в `conversation_members`, либо здесь, либо нигде: метка удаляется при повторном добавлении в той же транзакции.
 
 ### `message_blocks` — блоки сообщений
 
@@ -127,7 +147,8 @@ users ─┬─< files                      (files.user_id — кто загру
 | `conversations.last_message_id` | Сообщение переписки с наибольшим `id` |
 | `conversations.position_updated_at` | `created_at` последнего сообщения (без сообщений — время создания) |
 | `message_blocks.messages_count` | Сколько сообщений когда-либо записано в блок, не больше 20 |
-| `conversation_members.change_version` | Не больше `users.change_version`; ненулевые значения одного пользователя не повторяются |
+| `conversation_members.change_version`, `conversation_removed_members.change_version` | Не больше `users.change_version`; ненулевые значения одного пользователя не повторяются по обеим таблицам |
+| `conversations.owner_id` | У группы с участниками — один из её участников |
 
 `Conversation::recountUnread(?int $userId)` пересчитывает оба счётчика непрочитанных из указателей прочтения — для ручного исправления и для проверки инварианта в тестах (`TestCase::assertUnreadInvariant()`). Обновления счётчиков защищены `GREATEST(…, 0)`: рассинхронизированный счётчик не должен ломать отправку и прочтение ошибкой `UNSIGNED`.
 
@@ -138,15 +159,20 @@ users ─┬─< files                      (files.user_id — кто загру
 Порядок захвата строк одинаковый во всех транзакциях — иначе параллельные запросы сцепятся в дедлок:
 
 1. строка `conversations` (`FOR UPDATE`);
-2. строки `conversation_members` этой переписки;
-3. строки `users` — одним `UPDATE … WHERE id IN (…) ORDER BY id`, по возрастанию id.
+2. строки `conversation_members` этой переписки — в том числе повторная проверка участия (`Conversation::lockMember()`): из группы могли удалить между проверкой в обработчике и транзакцией;
+3. строки `users` — одним `UPDATE … WHERE id IN (…) ORDER BY id` или `SELECT … ORDER BY id FOR UPDATE`, по возрастанию id;
+4. вставка строк `conversation_members` и `conversation_removed_members` и запись `conversations.owner_id` — только после шага 3: проверка внешнего ключа ставит S-блокировку на строку `users`, и без уже взятой X-блокировки две транзакции с общим пользователем ждали бы друг друга. Создание группы поэтому поднимает версию создателя до вставки самой переписки.
 
 | Операция | Метод | Что меняется |
 |----------|-------|--------------|
 | Отправка | `Message::send()` | `message_blocks` (новый блок или `messages_count + 1`), `messages`, `conversations.last_message_id` и `position_updated_at`, прочтение: у отправителя указатель на новое сообщение, у остальных `unread_count + 1`; `change_version` у всех участников |
 | Правка | `Message::edit()` | `messages`, `message_blocks.updated_at`; если сообщение последнее — `conversations.updated_info_at` и `change_version` участников |
 | Прочтение | `Conversation::markRead()` | Указатель и `unread_count` участника, `total_unread_count` и `change_version` пользователя |
-| Создание личной переписки | `Conversation::findOrCreateSingle()` | `conversations`, `conversation_members`, `change_version` обоих |
+| Создание личной переписки | `Conversation::findOrCreateSingle()` | `conversations`, `change_version` обоих, затем `conversation_members` |
+| Создание группы | `Group::create()` | `conversations`, `change_version` создателя, его строка участника |
+| Добавление в группу | `Group::addMembers()` | `change_version` добавленных, удаление их меток, строки участников (указатель = последнее сообщение), `group_info_version` |
+| Удаление из группы, выход | `Group::removeMembers()`, `Group::leave()` | `change_version` и `total_unread_count` удалённых, метки удаления, удаление строк участников, при выходе владельца — `owner_id`; `group_info_version` |
+| Смена владельца | `Group::changeOwner()` | `owner_id`, `group_info_version` |
 
 WS-события публикуются **после** коммита: клиент, получивший событие и сразу пошедший в REST, увидит закоммиченные данные.
 
@@ -173,3 +199,4 @@ WS-события публикуются **после** коммита: клие
 | `011_conversations_last_message` | Последнее сообщение, `position_updated_at`, `updated_at` → `updated_info_at` |
 | `012_message_blocks_updated_at` | Время изменения блока |
 | `013_unread` | Непрочитанные: указатель, счётчики, версии |
+| `014_groups` | Группы: описание, владелец, версия GroupInfo, время и точка вступления, метки удаления |

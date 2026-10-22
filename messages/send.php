@@ -29,6 +29,11 @@ if ($clientId === null) {
 
 $message = Message::send((int) $conversationId, $userId, $text, $clientId, $isNew, $readInfos);
 
+// Удалён из группы после проверки выше — участие перепроверено под блокировкой
+if ($message === null) {
+    Response::error(ErrorCode::CONVERSATION_NOT_FOUND);
+}
+
 // Повтор с тем же clientId возвращает уже отправленное сообщение — но только из этой же переписки
 if ($message['conversationId'] !== (int) $conversationId) {
     Response::error(ErrorCode::MESSAGE_CLIENT_ID_TAKEN);

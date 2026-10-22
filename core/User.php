@@ -5,6 +5,9 @@ require_once __DIR__ . '/File.php';
 
 class User
 {
+    /** Максимальная длина имени — по колонкам users.name и conversations.name (название группы) */
+    const NAME_MAX_LENGTH = 128;
+
     /** Выборка пользователя вместе с файлом аватара (колонки файла с префиксом f_) */
     private const SELECT =
         'SELECT u.id, u.login, u.name,

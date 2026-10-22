@@ -8,18 +8,19 @@ class ConversationTest extends TestCase
     public function testFromRow(): void
     {
         $conversation = Conversation::fromRow(
-            ['id' => '3', 'type' => 'group', 'name' => 'Team', 'position_updated_at' => '1790846400123',
+            ['id' => '3', 'type' => 'group', 'name' => 'Team', 'description' => 'About', 'position_updated_at' => '1790846400123',
              'updated_info_at' => '1790846000456', 'f_id' => null, 'lm_id' => null,
              'unread_count' => '2', 'last_read_message_id' => '15', 'change_version' => '118'],
-            [1, 2],
+            null,
             null
         );
 
         $this->assertSame([
             'conversationId'    => 3,
             'type'              => 'group',
-            'memberIds'         => [1, 2],
+            'memberIds'         => null,
             'name'              => 'Team',
+            'description'       => 'About',
             'avatar'            => null,
             'opponentUserId'    => null,
             'lastMessage'       => null,
@@ -34,13 +35,13 @@ class ConversationTest extends TestCase
     public function testFromRowWithLastMessage(): void
     {
         $conversation = Conversation::fromRow([
-            'id' => 3, 'type' => 'group', 'name' => 'Team', 'position_updated_at' => 1, 'updated_info_at' => 1,
+            'id' => 3, 'type' => 'group', 'name' => 'Team', 'description' => null, 'position_updated_at' => 1, 'updated_info_at' => 1,
             'unread_count' => 0, 'last_read_message_id' => 0, 'change_version' => 0,
-            'f_id' => null, 'lm_id' => '15', 'lm_type' => 'text', 'lm_text' => 'Hi', 'lm_updated_at' => '1790846400123',
-        ], [], null);
+            'f_id' => null, 'lm_id' => '15', 'lm_sender_id' => '2', 'lm_type' => 'text', 'lm_text' => 'Hi', 'lm_updated_at' => '1790846400123',
+        ], null, null);
 
         $this->assertSame(
-            ['messageId' => 15, 'type' => 'text', 'text' => 'Hi', 'updatedAt' => 1790846400123],
+            ['messageId' => 15, 'senderId' => 2, 'type' => 'text', 'text' => 'Hi', 'updatedAt' => 1790846400123],
             $conversation['lastMessage']
         );
     }
@@ -48,11 +49,11 @@ class ConversationTest extends TestCase
     public function testFromRowWithAvatar(): void
     {
         $conversation = Conversation::fromRow([
-            'id' => 3, 'type' => 'group', 'name' => 'Team', 'position_updated_at' => 1, 'updated_info_at' => 1,
+            'id' => 3, 'type' => 'group', 'name' => 'Team', 'description' => null, 'position_updated_at' => 1, 'updated_info_at' => 1,
             'unread_count' => 0, 'last_read_message_id' => 0, 'change_version' => 0,
             'lm_id' => null, 'f_id' => 4, 'f_type' => 'image', 'f_path' => 'static/uploads/g.png', 'f_size' => 1,
             'f_filename' => 'g.png', 'f_extension' => 'png', 'f_data' => '{}',
-        ], [], null);
+        ], null, null);
 
         $this->assertSame(4, $conversation['avatar']['fileId']);
     }
@@ -198,7 +199,7 @@ class ConversationTest extends TestCase
         $ac = Conversation::findOrCreateSingle($a, $this->insertUser('c'))['conversationId'];
         $ad = Conversation::findOrCreateSingle($a, $this->insertUser('d'))['conversationId'];
 
-        $ids = fn(array $list) => array_column($list, 'conversationId');
+        $ids = fn(array $changed) => array_column($changed['conversations'], 'conversationId');
         // Создание — версии 1, 2, 3; по возрастанию версии
         $this->assertSame([$ab, $ac, $ad], $ids(Conversation::findChangedByMember($a, 0, 10)));
         $this->assertSame([$ac, $ad], $ids(Conversation::findChangedByMember($a, 1, 10)));
@@ -206,10 +207,10 @@ class ConversationTest extends TestCase
 
         // Изменение уходит в конец выдачи с новой версией
         Message::send($ab, $a, 'Hi');
-        $list = Conversation::findChangedByMember($a, 2, 10);
-        $this->assertSame([$ad, $ab], $ids($list));
-        $this->assertSame([3, 4], array_column($list, 'changeVersion'));
-        $this->assertSame([], Conversation::findChangedByMember($a, 4, 10));
+        $changed = Conversation::findChangedByMember($a, 2, 10);
+        $this->assertSame([$ad, $ab], $ids($changed));
+        $this->assertSame([3, 4], array_column($changed['conversations'], 'changeVersion'));
+        $this->assertSame(['conversations' => [], 'removedConversations' => []], Conversation::findChangedByMember($a, 4, 10));
     }
 
     public function testChangeVersionGrowsOnEveryChange(): void
@@ -414,8 +415,9 @@ class ConversationTest extends TestCase
 
         $conversation = Conversation::findById($id, $a);
 
+        // Состав группы — в GroupInfo, не в Conversation
         $this->assertSame('Team', $conversation['name']);
-        $this->assertSame([$a], $conversation['memberIds']);
+        $this->assertNull($conversation['memberIds']);
         $this->assertNull($conversation['opponentUserId']);
     }
 
