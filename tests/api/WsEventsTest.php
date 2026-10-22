@@ -173,9 +173,12 @@ class WsEventsTest extends TestCase
 
         $readInfo = $this->bobClient->post('/conversations/markRead', ['conversationId' => $conversationId, 'messageId' => $messageId])['response']['readInfo'];
 
-        // Во все соединения читающего, включая вызвавшее; собеседнику — нет
+        // Во все соединения читающего, включая вызвавшее; собеседнику — только memberRead
         $this->assertEvent('conversations', 'read', ['readInfo' => $readInfo], $first->receive());
         $this->assertEvent('conversations', 'read', ['readInfo' => $readInfo], $second->receive());
+        $this->assertNull($first->receive(0.3));
+        $this->assertNull($second->receive(0.3));
+        $this->assertSame('memberRead', $mine->receive()['event'] ?? null);
         $this->assertNull($mine->receive(0.3));
     }
 
@@ -185,10 +188,41 @@ class WsEventsTest extends TestCase
         $messageId = Message::send($conversationId, $this->me, 'Hi')['messageId'];
         Conversation::markRead($conversationId, $this->bob, $messageId);
         $bobs = $this->wsConnect($this->bobClient, $this->bob);
+        $mine = $this->wsConnect($this->client, $this->me);
 
         $this->assertSuccess($this->bobClient->post('/conversations/markRead', ['conversationId' => $conversationId, 'messageId' => $messageId]));
 
         $this->assertNull($bobs->receive(0.3));
+        $this->assertNull($mine->receive(0.3));
+    }
+
+    // ---- conversations / memberRead ----
+
+    public function testMemberRead(): void
+    {
+        $conversationId = Conversation::findOrCreateSingle($this->me, $this->bob)['conversationId'];
+        $messageId = Message::send($conversationId, $this->me, 'Hi')['messageId'];
+        $first  = $this->wsConnect($this->client, $this->me);
+        $second = $this->wsConnect($this->client, $this->me);
+
+        $this->bobClient->post('/conversations/markRead', ['conversationId' => $conversationId, 'messageId' => $messageId]);
+
+        // Во все соединения собеседника; без версии и без userIds
+        $body = ['conversationId' => $conversationId, 'userId' => $this->bob, 'lastReadMessageId' => $messageId];
+        $this->assertEvent('conversations', 'memberRead', $body, $first->receive());
+        $this->assertEvent('conversations', 'memberRead', $body, $second->receive());
+    }
+
+    public function testMemberReadNotSentOnSend(): void
+    {
+        $conversationId = Conversation::findOrCreateSingle($this->me, $this->bob)['conversationId'];
+        $mine = $this->wsConnect($this->client, $this->me);
+
+        $this->assertSuccess($this->bobClient->post('/messages/send', ['conversationId' => $conversationId, 'text' => 'Hi', 'clientId' => 'c1']));
+
+        // Указатель отправителя клиент сдвигает по received
+        $this->assertSame('received', $mine->receive()['event'] ?? null);
+        $this->assertNull($mine->receive(0.3));
     }
 
     /** Правило непрерывности: каждое изменение приходит событием ровно со своей версией, без пропусков. */

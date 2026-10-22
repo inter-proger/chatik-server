@@ -25,9 +25,18 @@ if ($message === null || $message['conversationId'] !== (int) $conversationId) {
 
 $readInfo = Conversation::markRead((int) $conversationId, $userId, $message['messageId'], $changed);
 
-// Во все соединения пользователя, включая вызвавшее; если ничего не изменилось — события нет
+// read — во все соединения пользователя, включая вызвавшее; memberRead — остальным участникам.
+// Одним запросом к WS-серверу; если ничего не изменилось — событий нет
 if ($changed) {
-    WebSocket::publish([$userId], 'conversations', 'read', ['readInfo' => $readInfo]);
+    $otherMemberIds = array_values(array_diff(Conversation::findMemberIds((int) $conversationId), [$userId]));
+    WebSocket::publishEach([
+        WebSocket::delivery([$userId], 'conversations', 'read', ['readInfo' => $readInfo]),
+        WebSocket::delivery($otherMemberIds, 'conversations', 'memberRead', [
+            'conversationId'    => (int) $conversationId,
+            'userId'            => $userId,
+            'lastReadMessageId' => $readInfo['lastReadMessageId'],
+        ]),
+    ]);
 }
 
 Response::success([

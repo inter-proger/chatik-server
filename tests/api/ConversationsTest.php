@@ -353,6 +353,76 @@ class ConversationsTest extends TestCase
         $this->assertError(ErrorCode::NOT_AUTHENTICATED, $res);
     }
 
+    // ---- /conversations/getMembersReadMeta ----
+
+    public function testGetMembersReadMeta(): void
+    {
+        [$bobClient, $bob] = $this->signup('bob');
+        $id = $this->client->post('/conversations/createSingle', ['userId' => $bob['userId']])['response']['conversation']['conversationId'];
+
+        // Непрочитавший — 0; текущего пользователя в ответе нет
+        $res = $this->client->get('/conversations/getMembersReadMeta', ['conversationId' => $id]);
+
+        $this->assertSuccess($res);
+        $this->assertSame(['membersReadMeta' => [['userId' => $bob['userId'], 'lastReadMessageId' => 0]]], $res['response']);
+        $this->assertFalse(array_key_exists('actions', $res));
+
+        // Прочтение сдвигает указатель
+        $mine = $this->client->post('/messages/send', ['conversationId' => $id, 'text' => 'Hi', 'clientId' => 'c1'])['response']['message']['messageId'];
+        $bobClient->post('/conversations/markRead', ['conversationId' => $id, 'messageId' => $mine]);
+
+        $res = $this->client->get('/conversations/getMembersReadMeta', ['conversationId' => $id]);
+        $this->assertSame([['userId' => $bob['userId'], 'lastReadMessageId' => $mine]], $res['response']['membersReadMeta']);
+    }
+
+    public function testGetMembersReadMetaSenderPointerMovesOnSend(): void
+    {
+        [$bobClient, $bob] = $this->signup('bob');
+        $id = $this->client->post('/conversations/createSingle', ['userId' => $bob['userId']])['response']['conversation']['conversationId'];
+        $this->client->post('/messages/send', ['conversationId' => $id, 'text' => 'Hi', 'clientId' => 'c1']);
+        $reply = $bobClient->post('/messages/send', ['conversationId' => $id, 'text' => 'Hey', 'clientId' => 'c2'])['response']['message']['messageId'];
+
+        $res = $this->client->get('/conversations/getMembersReadMeta', ['conversationId' => $id]);
+
+        $this->assertSame([['userId' => $bob['userId'], 'lastReadMessageId' => $reply]], $res['response']['membersReadMeta']);
+    }
+
+    /**
+     * Фиксирует контракт: порядок по userId. Без ORDER BY тест тоже прошёл бы — InnoDB отдаёт строки
+     * в порядке PK (conversation_id, user_id), — поэтому ORDER BY в запросе явный, а не на совести PK.
+     */
+    public function testGetMembersReadMetaOrderedByUserId(): void
+    {
+        $bob   = $this->insertUser('bob');
+        $carol = $this->insertUser('carol');
+        $id = $this->client->post('/conversations/createSingle', ['userId' => $carol])['response']['conversation']['conversationId'];
+        // Групп пока нет — добавляем участника напрямую
+        DB::get()->prepare('INSERT INTO conversation_members (conversation_id, user_id) VALUES (?, ?)')->execute([$id, $bob]);
+
+        $res = $this->client->get('/conversations/getMembersReadMeta', ['conversationId' => $id]);
+
+        $this->assertSame([$bob, $carol], array_column($res['response']['membersReadMeta'], 'userId'));
+    }
+
+    public function testGetMembersReadMetaConversationNotFound(): void
+    {
+        [$daveClient] = $this->signup('dave');
+        $foreign = $daveClient->post('/conversations/createSingle', ['userId' => $this->insertUser('carol')])['response']['conversation']['conversationId'];
+
+        foreach (['', 'abc', '-1', '999', (string) $foreign] as $conversationId) {
+            $res = $this->client->get('/conversations/getMembersReadMeta', ['conversationId' => $conversationId]);
+            $this->assertError(ErrorCode::CONVERSATION_NOT_FOUND, $res);
+        }
+        $this->assertError(ErrorCode::CONVERSATION_NOT_FOUND, $this->client->get('/conversations/getMembersReadMeta'));
+    }
+
+    public function testGetMembersReadMetaNotAuthenticated(): void
+    {
+        $res = $this->client()->get('/conversations/getMembersReadMeta', ['conversationId' => 1]);
+
+        $this->assertError(ErrorCode::NOT_AUTHENTICATED, $res);
+    }
+
     // ---- /conversations/getBatch ----
 
     public function testGetBatch(): void

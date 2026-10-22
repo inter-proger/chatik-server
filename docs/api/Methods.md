@@ -38,6 +38,7 @@
 - [GET /conversations/getList — Список переписок](methods/Conversations.md#get-conversationsgetlist--список-переписок)
 - [GET /conversations/getBatch — Переписки по списку id](methods/Conversations.md#get-conversationsgetbatch--переписки-по-списку-id)
 - [POST /conversations/markRead — Отметка прочтения](methods/Conversations.md#post-conversationsmarkread--отметка-прочтения)
+- [GET /conversations/getMembersReadMeta — Прочтение другими участниками](methods/Conversations.md#get-conversationsgetmembersreadmeta--прочтение-другими-участниками)
 
 ## [/messages](methods/Messages.md) — Сообщения
 

@@ -288,6 +288,24 @@ class Conversation
         return array_map('intval', $stmt->fetchAll(PDO::FETCH_KEY_PAIR));
     }
 
+    /**
+     * Указатели прочтения участников переписки, кроме $exceptUserId, — массив MemberReadMeta
+     * (userId, lastReadMessageId) по возрастанию userId.
+     */
+    public static function findMembersReadMeta(int $conversationId, int $exceptUserId): array
+    {
+        $stmt = DB::get()->prepare(
+            'SELECT user_id, last_read_message_id FROM conversation_members
+             WHERE conversation_id = ? AND user_id <> ? ORDER BY user_id'
+        );
+        $stmt->execute([$conversationId, $exceptUserId]);
+
+        return array_map(fn($row) => [
+            'userId'            => (int) $row['user_id'],
+            'lastReadMessageId' => (int) $row['last_read_message_id'],
+        ], $stmt->fetchAll());
+    }
+
     /** id участников переписки по возрастанию; для несуществующей переписки — пустой массив. */
     public static function findMemberIds(int $conversationId): array
     {
