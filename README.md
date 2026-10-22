@@ -83,6 +83,7 @@ docs/            документация
 | [Methods.md](docs/api/Methods.md) | REST-методы по группам |
 | [WebSocket.md](docs/api/WebSocket.md) | Протокол WebSocket и события |
 | [Admin.md](docs/api/Admin.md) | Методы админ-панели |
+| [Changes.md](docs/api/Changes.md) | Изменения API для клиентов — сводки по задачам |
 
 ### Архитектура — как устроен сервер
 
@@ -109,6 +110,6 @@ docs/            документация
 
 | Документ | Содержание |
 |----------|------------|
-| [Guide.md](docs/development/Guide.md) | Локальный запуск, соглашения, чек-листы изменений |
+| [Guide.md](docs/development/Guide.md) | Локальный запуск, порядок разработки, соглашения, чек-листы, ветки и pull request |
 | [Testing.md](docs/development/Testing.md) | Тесты: запуск, раннер, библиотека, как писать |
 | [TestUsers.md](docs/development/TestUsers.md) | Тестовые пользователи локальной БД |
