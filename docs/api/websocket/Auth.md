@@ -1,6 +1,6 @@
 # WebSocket: `auth` — Авторизация соединения
 
-[← WebSocket](../WebSocket.md) · [Документация API](../../../API_Documentation.md)
+[← WebSocket](../WebSocket.md) · [Документация API](../README.md)
 
 ## `auth` / `connect` — авторизация соединения
 

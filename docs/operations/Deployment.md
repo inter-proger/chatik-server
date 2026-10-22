@@ -1,5 +1,7 @@
 # Развёртывание сервера
 
+[← README](../../README.md)
+
 Инструкция по установке ServerAi на чистый сервер. Пример — Ubuntu 24.04, nginx + PHP-FPM, MySQL 8, systemd; на других дистрибутивах меняются только имена пакетов и пути. Домен в примерах — `api.example.com`, каталог проекта — `/var/www/serverai`.
 
 Без своего сервера — с локальной машины через туннель: [«Локальный сервер через туннель Tuna»](#локальный-сервер-через-туннель-tuna).
@@ -8,7 +10,7 @@
 
 - **REST API** — `index.php` под PHP-FPM, все запросы к API идут через него;
 - **статика** — загруженные файлы в `static/uploads/` и документы в `static/docs/`, отдаёт nginx напрямую;
-- **WebSocket-сервер** — отдельный долгоживущий процесс `websocket/server.php` (CLI), за nginx; устройство — [WebSocket_Architecture.md](WebSocket_Architecture.md);
+- **WebSocket-сервер** — отдельный долгоживущий процесс `websocket/server.php` (CLI), за nginx; устройство — [architecture/WebSocket.md](../architecture/WebSocket.md);
 - **MySQL** — одна БД, схема — миграции из `db/`.
 
 ```
@@ -312,13 +314,13 @@ curl -s https://api.example.com/global/start
 
 # неизвестный путь и закрытые файлы — JSON 404, а не содержимое
 curl -s https://api.example.com/config/db.php
-curl -s https://api.example.com/Test_Users.md
+curl -s https://api.example.com/docs/development/TestUsers.md
 
 # WS-сервер слушает
 ss -ltnp | grep -E '8081|8082'
 ```
 
-Сквозная проверка: зарегистрироваться через `/auth/signup`, войти, загрузить картинку `/files/uploadImage` (проверяет права на `static/uploads` и GD), открыть полученный `url` в браузере, получить токен `/global/getWebsocketToken` и подключиться к `wss://api.example.com/ws` (например, `websocat`) — методы и события описаны в [API_Documentation.md](API_Documentation.md).
+Сквозная проверка: зарегистрироваться через `/auth/signup`, войти, загрузить картинку `/files/uploadImage` (проверяет права на `static/uploads` и GD), открыть полученный `url` в браузере, получить токен `/global/getWebsocketToken` и подключиться к `wss://api.example.com/ws` (например, `websocat`) — методы и события описаны в [docs/api/README.md](../api/README.md).
 
 ## Безопасность — перед открытием наружу
 
@@ -335,7 +337,7 @@ ss -ltnp | grep -E '8081|8082'
   }
   ```
 
-- **Тестовые пользователи** из [Test_Users.md](Test_Users.md) существуют только в локальной БД — на сервере их не создавать.
+- **Тестовые пользователи** из [TestUsers.md](../development/TestUsers.md) существуют только в локальной БД — на сервере их не создавать.
 - **`WEBSOCKET_INTERNAL_SECRET`** — уникальный для каждого окружения, не `change-me`.
 - **Тесты** (`php tests/run.php`) на боевом сервере не запускать: раннер пересоздаёт БД из `tests/config/db.php` и поднимает собственные серверы.
 - В файрволе открыть только 22, 80, 443; MySQL, 8081 и 8082 наружу не публикуются.
@@ -445,4 +447,4 @@ curl -s https://<поддомен>.a.tuna.free/global/start
 curl -s https://<поддомен>.a.tuna.free/config/db.php
 ```
 
-Перед тем как раздавать адрес: в локальной БД есть тестовые пользователи с паролями из [Test_Users.md](Test_Users.md) — через туннель под ними сможет войти любой. Для доступа только своим — `tuna http 8090 --basic-auth=логин:пароль` (клиенту тогда нужен заголовок `Authorization`).
+Перед тем как раздавать адрес: в локальной БД есть тестовые пользователи с паролями из [TestUsers.md](../development/TestUsers.md) — через туннель под ними сможет войти любой. Для доступа только своим — `tuna http 8090 --basic-auth=логин:пароль` (клиенту тогда нужен заголовок `Authorization`).

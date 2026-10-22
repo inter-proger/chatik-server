@@ -1,6 +1,8 @@
 # Непрочитанные сообщения: счётчики и прочтение
 
-Описывает, как сервер считает непрочитанные сообщения по каждой переписке и в сумме, как пользователь отмечает переписку прочитанной и как клиент синхронизирует прочтение между устройствами. Реализовано; клиентский контракт — в `docs/api/` ([ReadInfo и версия пользователя](docs/api/Objects.md#объект-readinfo), [методы переписок](docs/api/methods/Conversations.md), [слияние переписки](docs/api/WebSocket.md#слияние-переписки) и [курсор синхронизации](docs/api/WebSocket.md#курсор-синхронизации), [события `conversations`](docs/api/websocket/Conversations.md) и [`messages`](docs/api/websocket/Messages.md)), здесь — серверная сторона и обоснования. При расхождении верен `docs/api/`.
+[← Обзор архитектуры](Overview.md)
+
+Описывает, как сервер считает непрочитанные сообщения по каждой переписке и в сумме, как пользователь отмечает переписку прочитанной и как клиент синхронизирует прочтение между устройствами. Реализовано; клиентский контракт — в `docs/api/` ([ReadInfo и версия пользователя](../api/Objects.md#объект-readinfo), [методы переписок](../api/methods/Conversations.md), [слияние переписки](../api/WebSocket.md#слияние-переписки) и [курсор синхронизации](../api/WebSocket.md#курсор-синхронизации), [события `conversations`](../api/websocket/Conversations.md) и [`messages`](../api/websocket/Messages.md)), здесь — серверная сторона и обоснования. При расхождении верен `docs/api/`.
 
 ## Коротко
 
@@ -122,7 +124,7 @@ readInfo для ответа и событий собирается внутри
 
 Добавляются `unreadCount`, `lastReadMessageId`, `changeVersion`; `totalUnreadCount` в Conversation не входит. Значения зависят от смотрящего, как и `opponentUserId`: `Conversation::select()` джойнит `conversation_members` по `viewerId`. Этот JOIN заменяет собственные `JOIN conversation_members m` в `findByIds` и `findListByMember`, а `findById`, где его сейчас нет, получает его вместе с `select()`.
 
-В [правила слияния](docs/api/WebSocket.md#слияние-переписки) добавляется четвёртое: если пришедший `changeVersion` больше локального, взять `unreadCount`, `lastReadMessageId`, `changeVersion`. Информация по-прежнему сливается по `updatedInfoAt` (правило 3). Перевести её на `changeVersion` нельзя: события `messages` несут версию, но не информацию, и применённая из события версия отбросила бы ещё не пришедшие изменения информации.
+В [правила слияния](../api/WebSocket.md#слияние-переписки) добавляется четвёртое: если пришедший `changeVersion` больше локального, взять `unreadCount`, `lastReadMessageId`, `changeVersion`. Информация по-прежнему сливается по `updatedInfoAt` (правило 3). Перевести её на `changeVersion` нельзя: события `messages` несут версию, но не информацию, и применённая из события версия отбросила бы ещё не пришедшие изменения информации.
 
 ### `GET /conversations/getList` — фильтр `changedAfter`
 
@@ -159,7 +161,7 @@ readInfo для ответа и событий собирается внутри
 
 Событие с версией `v` всегда применяется по правилам слияния. Если `v > syncedChangeVersion`, `v` добавляется в `seenVersions`. Затем, пока `syncedChangeVersion + 1` есть в `seenVersions`, курсор растёт на 1, а версия убирается из множества.
 
-Курсор не перескакивает версию, событие которой не дошло. Доставка по WS идёт без повторов ([WebSocket_Architecture.md](WebSocket_Architecture.md)), а события параллельных запросов публикуются после коммита и могут прийти не в порядке версий. Пропуск остаётся до следующей синхронизации: `changedAfter` с курсора вернёт пропущенное изменение, а заодно и уже полученные выше него (повторное слияние безвредно). Если разрыв держится дольше нескольких секунд, клиент может запустить синхронизацию `changedAfter`, не дожидаясь переподключения.
+Курсор не перескакивает версию, событие которой не дошло. Доставка по WS идёт без повторов ([WebSocket.md](WebSocket.md)), а события параллельных запросов публикуются после коммита и могут прийти не в порядке версий. Пропуск остаётся до следующей синхронизации: `changedAfter` с курсора вернёт пропущенное изменение, а заодно и уже полученные выше него (повторное слияние безвредно). Если разрыв держится дольше нескольких секунд, клиент может запустить синхронизацию `changedAfter`, не дожидаясь переподключения.
 
 Ответы методов (`markRead`, `/messages/send`) применяются слиянием, но курсор не двигают: то же изменение приходит событием во все соединения пользователя, включая вызвавшее.
 
@@ -226,7 +228,7 @@ readInfo для ответа и событий собирается внутри
 | readInfo в ответе `/messages/send` | Да, readInfo отправителя |
 | `totalUnreadCount` и `changeVersion` в `getList` | В каждом ответе, полями верхнего уровня |
 
-**Правило для документации** (рядом с правилом про полный объект в [синхронизации](docs/api/WebSocket.md#синхронизация)): любое новое изменяемое поле переписки, кроме позиции, обязано увеличивать `change_version` участников, иначе синхронизация его потеряет. Событие этого изменения обязано нести новую версию получателя, иначе курсор остановится на ней до переподключения.
+**Правило для документации** (рядом с правилом про полный объект в [синхронизации](../api/WebSocket.md#синхронизация)): любое новое изменяемое поле переписки, кроме позиции, обязано увеличивать `change_version` участников, иначе синхронизация его потеряет. Событие этого изменения обязано нести новую версию получателя, иначе курсор остановится на ней до переподключения.
 
 ## Граничные случаи и риски
 
@@ -238,7 +240,7 @@ readInfo для ответа и событий собирается внутри
 ## На будущее
 
 - **Счётчик в `/global/start`.** Клиент всё равно вызывает его при запуске. Если отдавать там `totalUnreadCount` и `changeVersion` (или `null` для анонима), на старте будет одним запросом меньше. `getTotalUnreadCount` остаётся для фонового обновления бейджа.
-- **«Прочитано собеседником» (две галочки).** Реализовано по [Read_Receipts_Architecture.md](Read_Receipts_Architecture.md): отдельный метод `/conversations/getMembersReadMeta` и событие `conversations` / `memberRead` без версий вместо поля `opponentLastReadMessageId` в Conversation.
+- **«Прочитано собеседником» (две галочки).** Реализовано по [ReadReceipts.md](ReadReceipts.md): отдельный метод `/conversations/getMembersReadMeta` и событие `conversations` / `memberRead` без версий вместо поля `opponentLastReadMessageId` в Conversation.
 - **«Отметить непрочитанным» и «прочитать всё».** Первое ломает монотонность указателя — если понадобится, то отдельным флагом, а не откатом `lastReadMessageId`. Второе — отдельный метод с одним событием на все переписки.
 
 ## Реализация
@@ -250,5 +252,5 @@ readInfo для ответа и событий собирается внутри
 - [x] `conversations/markRead.php`, `global/getTotalUnreadCount.php`
 - [x] `messages/send.php`: `publishEach` с readInfo на каждого участника, readInfo отправителя в ответе; то же в `admin/sendMessage.php`
 - [x] `messages/edit.php`: при правке последнего сообщения `publishEach` с `changeVersion` каждого участника
-- [x] Документация: `Objects.md` (ReadInfo, Conversation), `methods/Conversations.md` (markRead, `changedAfter` и синхронизация списка), `methods/Global.md`, `Methods.md`, `websocket/Conversations.md` (`read`, версия в `singleCreated`), `websocket/Messages.md` (readInfo в `received`, `changeVersion` в `edited`), в `WebSocket.md` — слияние, правило непрерывности курсора, правило про `change_version` и оглавление «События»; `Conversation_List_Architecture.md` — отметить замену `updatedInfoAfter`
+- [x] Документация: `Objects.md` (ReadInfo, Conversation), `methods/Conversations.md` (markRead, `changedAfter` и синхронизация списка), `methods/Global.md`, `Methods.md`, `websocket/Conversations.md` (`read`, версия в `singleCreated`), `websocket/Messages.md` (readInfo в `received`, `changeVersion` в `edited`), в `WebSocket.md` — слияние, правило непрерывности курсора, правило про `change_version` и оглавление «События»; `ConversationList.md` — отметить замену `updatedInfoAfter`
 - [x] Тесты: юнит на счётчики, инвариант, рост версии и `GREATEST` при сломанном инварианте; API на markRead (старый id, чужая переписка, повтор), на `changedAfter` (прочтение и правка последнего сообщения попадают в выдачу, пагинация курсором, изменение во время листания); переписать тесты `updatedInfoAfter`; readInfo в `received` с версией ровно этого изменения; `changeVersion` в `edited` у последнего сообщения и его отсутствие у не последнего; версии событий подряд идущих изменений без пропусков

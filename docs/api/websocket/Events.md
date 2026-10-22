@@ -1,6 +1,6 @@
 # WebSocket: `events` — Служебные события протокола
 
-[← WebSocket](../WebSocket.md) · [Документация API](../../../API_Documentation.md)
+[← WebSocket](../WebSocket.md) · [Документация API](../README.md)
 
 ## `events` / `received` — подтверждение получения события
 
