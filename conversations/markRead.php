@@ -5,7 +5,6 @@ require_once __DIR__ . '/../core/Conversation.php';
 require_once __DIR__ . '/../core/Message.php';
 require_once __DIR__ . '/../core/Response.php';
 require_once __DIR__ . '/../core/ErrorCode.php';
-require_once __DIR__ . '/../core/WebSocket.php';
 
 $userId = Auth::requireUserId();
 
@@ -25,18 +24,9 @@ if ($message === null || $message['conversationId'] !== (int) $conversationId) {
 
 $readInfo = Conversation::markRead((int) $conversationId, $userId, $message['messageId'], $changed);
 
-// read — во все соединения пользователя, включая вызвавшее; memberRead — остальным участникам.
-// Одним запросом к WS-серверу; если ничего не изменилось — событий нет
+// Во все соединения пользователя, включая вызвавшее, и остальным участникам; если ничего не изменилось — событий нет
 if ($changed) {
-    $otherMemberIds = array_values(array_diff(Conversation::findMemberIds((int) $conversationId), [$userId]));
-    WebSocket::publishEach([
-        WebSocket::delivery([$userId], 'conversations', 'read', ['readInfo' => $readInfo]),
-        WebSocket::delivery($otherMemberIds, 'conversations', 'memberRead', [
-            'conversationId'    => (int) $conversationId,
-            'userId'            => $userId,
-            'lastReadMessageId' => $readInfo['lastReadMessageId'],
-        ]),
-    ]);
+    Conversation::publishRead((int) $conversationId, $userId, $readInfo);
 }
 
 Response::success([

@@ -3,6 +3,7 @@
 require_once __DIR__ . '/DB.php';
 require_once __DIR__ . '/File.php';
 require_once __DIR__ . '/Message.php';
+require_once __DIR__ . '/WebSocket.php';
 
 class Conversation
 {
@@ -229,6 +230,23 @@ class Conversation
         }
 
         return $readInfo;
+    }
+
+    /**
+     * Рассылает итог markRead(), если указатель сдвинулся: read — во все соединения $userId,
+     * memberRead — остальным участникам. Одним запросом к WS-серверу.
+     */
+    public static function publishRead(int $conversationId, int $userId, array $readInfo): void
+    {
+        $otherMemberIds = array_values(array_diff(self::findMemberIds($conversationId), [$userId]));
+        WebSocket::publishEach([
+            WebSocket::delivery([$userId], 'conversations', 'read', ['readInfo' => $readInfo]),
+            WebSocket::delivery($otherMemberIds, 'conversations', 'memberRead', [
+                'conversationId'    => $conversationId,
+                'userId'            => $userId,
+                'lastReadMessageId' => $readInfo['lastReadMessageId'],
+            ]),
+        ]);
     }
 
     /**

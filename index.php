@@ -54,6 +54,7 @@ $routes = [
     '/admin/getUsers' => __DIR__ . '/admin/getUsers.php',
     '/admin/getConversations' => __DIR__ . '/admin/getConversations.php',
     '/admin/sendMessage' => __DIR__ . '/admin/sendMessage.php',
+    '/admin/markRead' => __DIR__ . '/admin/markRead.php',
 ];
 
 if (!isset($routes[$uri])) {

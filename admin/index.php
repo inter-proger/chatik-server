@@ -23,6 +23,8 @@ header('Content-Type: text/html; charset=utf-8');
     button { padding: 8px 16px; border: 0; border-radius: 6px; background: #2563eb; color: #fff; font: inherit; cursor: pointer; }
     button:disabled { opacity: .5; cursor: default; }
     button.link { background: none; color: #2563eb; padding: 4px 0; }
+    button.secondary { background: #e5e7eb; color: #111827; }
+    .actions { display: flex; gap: 8px; }
     .list { max-height: 280px; overflow-y: auto; border: 1px solid #e5e7eb; border-radius: 6px; margin-top: 8px; }
     .item { padding: 8px 10px; border-bottom: 1px solid #f3f4f6; cursor: pointer; display: flex; justify-content: space-between; gap: 8px; }
     .item:last-child { border-bottom: 0; }
@@ -49,7 +51,7 @@ header('Content-Type: text/html; charset=utf-8');
     </section>
 
     <div id="app" hidden>
-        <h1>Отправка сообщения от имени пользователя <button id="logout" class="link">Выйти</button></h1>
+        <h1>Действия от имени пользователя <button id="logout" class="link">Выйти</button></h1>
 
         <section class="card">
             <h2>1. Пользователь</h2>
@@ -69,7 +71,10 @@ header('Content-Type: text/html; charset=utf-8');
             <form id="sendForm">
                 <div class="muted" id="sendSummary"></div>
                 <label><textarea name="text" maxlength="4096" required></textarea></label>
-                <button type="submit">Отправить</button>
+                <div class="actions">
+                    <button type="submit">Отправить</button>
+                    <button type="button" id="markRead" class="secondary">Прочитать чат</button>
+                </div>
             </form>
             <div id="sendNotice" class="notice" hidden></div>
         </section>
@@ -253,6 +258,27 @@ $('sendForm').addEventListener('submit', async e => {
         }, true);
         form.text.value = '';
         notice($('sendNotice'), true, 'Сообщение отправлено (id ' + res.message.messageId + ')');
+    } catch (err) {
+        if (err.code !== 2003) notice($('sendNotice'), false, err.message);
+    } finally {
+        button.disabled = false;
+    }
+});
+
+// ---- Прочтение ----
+
+$('markRead').addEventListener('click', async e => {
+    const button = e.target;
+    button.disabled = true;
+    try {
+        const res = await api('markRead', {
+            userId: state.user.userId,
+            conversationId: state.conversation.conversationId,
+        }, true);
+        const readInfo = res.readInfo;
+        notice($('sendNotice'), true, readInfo.lastReadMessageId
+            ? 'Чат прочитан до сообщения id ' + readInfo.lastReadMessageId
+            : 'В чате нет сообщений');
     } catch (err) {
         if (err.code !== 2003) notice($('sendNotice'), false, err.message);
     } finally {

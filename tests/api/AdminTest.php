@@ -36,7 +36,7 @@ class AdminTest extends TestCase
     {
         $client = $this->client();
 
-        foreach (['/admin/getUsers', '/admin/getConversations', '/admin/sendMessage', '/admin/logout'] as $path) {
+        foreach (['/admin/getUsers', '/admin/getConversations', '/admin/sendMessage', '/admin/markRead', '/admin/logout'] as $path) {
             $this->assertError(ErrorCode::NOT_AUTHENTICATED, $client->post($path));
         }
     }
@@ -225,6 +225,78 @@ class AdminTest extends TestCase
         foreach ([[], ['text' => '   '], ['text' => str_repeat('a', Message::TEXT_MAX_LENGTH + 1)], ['text' => ['a']]] as $params) {
             $res = $this->admin->post('/admin/sendMessage', ['userId' => $me, 'conversationId' => $conversationId] + $params);
             $this->assertError(ErrorCode::INVALID_TEXT, $res);
+        }
+    }
+
+    // ---- /admin/markRead ----
+
+    public function testMarkRead(): void
+    {
+        [$meClient, $meUser] = $this->signup('me', 'Me');
+        [$bobClient, $bobUser] = $this->signup('bob', 'Bob');
+        $me  = $meUser['userId'];
+        $bob = $bobUser['userId'];
+        $conversationId = Conversation::findOrCreateSingle($me, $bob)['conversationId'];
+        Message::send($conversationId, $bob, 'One');
+        $last = Message::send($conversationId, $bob, 'Two')['messageId'];
+        $meWs  = $this->wsConnect($meClient, $me);
+        $bobWs = $this->wsConnect($bobClient, $bob);
+
+        $res = $this->admin->post('/admin/markRead', ['userId' => $me, 'conversationId' => $conversationId]);
+
+        // До последнего сообщения; события — как в /conversations/markRead
+        $this->assertSuccess($res);
+        $readInfo = $res['response']['readInfo'];
+        $this->assertSame(Conversation::findReadInfos($conversationId, [$me])[$me], $readInfo);
+        $this->assertSame($last, $readInfo['lastReadMessageId']);
+        $this->assertSame(0, $readInfo['unreadCount']);
+        $this->assertSame(0, $readInfo['totalUnreadCount']);
+        $this->assertFalse(isset($res['actions']));
+        $this->assertEvent('conversations', 'read', ['readInfo' => $readInfo], $meWs->receive());
+        $this->assertEvent('conversations', 'memberRead', [
+            'conversationId' => $conversationId, 'userId' => $me, 'lastReadMessageId' => $last,
+        ], $bobWs->receive());
+        $this->assertUnreadInvariant();
+
+        // Повтор ничего не меняет — событий нет
+        $this->assertSame($readInfo, $this->admin->post('/admin/markRead', ['userId' => $me, 'conversationId' => $conversationId])['response']['readInfo']);
+        $this->assertNull($meWs->receive(0.3));
+        $this->assertNull($bobWs->receive(0.3));
+    }
+
+    public function testMarkReadEmptyConversation(): void
+    {
+        [$meClient, $meUser] = $this->signup('me', 'Me');
+        $me = $meUser['userId'];
+        $conversationId = Conversation::findOrCreateSingle($me, $this->insertUser('bob'))['conversationId'];
+        $meWs = $this->wsConnect($meClient, $me);
+
+        $res = $this->admin->post('/admin/markRead', ['userId' => $me, 'conversationId' => $conversationId]);
+
+        $this->assertSuccess($res);
+        $this->assertSame(Conversation::findReadInfos($conversationId, [$me])[$me], $res['response']['readInfo']);
+        $this->assertSame(0, $res['response']['readInfo']['lastReadMessageId']);
+        $this->assertNull($meWs->receive(0.3));
+    }
+
+    public function testMarkReadUserNotFound(): void
+    {
+        foreach (['', 'abc', '-1', '999'] as $userId) {
+            $res = $this->admin->post('/admin/markRead', ['userId' => $userId, 'conversationId' => 1]);
+            $this->assertError(ErrorCode::USER_NOT_FOUND, $res);
+        }
+    }
+
+    public function testMarkReadConversationNotFound(): void
+    {
+        $me    = $this->insertUser('me');
+        $bob   = $this->insertUser('bob');
+        $carol = $this->insertUser('carol');
+        $foreign = Conversation::findOrCreateSingle($bob, $carol)['conversationId'];
+
+        foreach (['', 'abc', '-1', '999', (string) $foreign] as $conversationId) {
+            $res = $this->admin->post('/admin/markRead', ['userId' => $me, 'conversationId' => $conversationId]);
+            $this->assertError(ErrorCode::CONVERSATION_NOT_FOUND, $res);
         }
     }
 }
