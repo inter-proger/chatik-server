@@ -342,7 +342,7 @@ ss -ltnp | grep -E '8081|8082'
 
 ## Локальный сервер через туннель Tuna
 
-Вариант без VPS и домена: сервер работает на своей машине (пример — macOS с Homebrew), наружу его выводит [Tuna](https://tuna.am/). Бесплатный тариф даёт один постоянный поддомен в `tuna.free`, HTTPS и WebSocket, но **только один активный туннель** — поэтому REST, статика и `/ws` сводятся локальным nginx на один порт, как в [шаге 7](#7-nginx). TLS делает Tuna, certbot не нужен. Сервер доступен, пока машина включена и не спит.
+Вариант без VPS и домена: сервер работает на своей машине (пример — macOS с Homebrew), наружу его выводит [Tuna](https://tuna.am/). Бесплатный тариф даёт один постоянный поддомен в `a.tuna.free` (выдаётся автоматически, Tuna показывает его при запуске), HTTPS и WebSocket, но **только один активный туннель** — поэтому REST, статика и `/ws` сводятся локальным nginx на один порт, как в [шаге 7](#7-nginx). TLS делает Tuna, certbot не нужен. Сервер доступен, пока машина включена и не спит.
 
 ```
 клиент ──https/wss──▶ Tuna ──▶ nginx 127.0.0.1:8090 ─┬─ /ws ──────▶ websocket/server.php :8081
@@ -415,7 +415,7 @@ nginx -t && nginx -s reload
 
 Публиковать в туннель только этот порт: dev-конфиг с `try_files $uri` и `root` в корне проекта отдаёт наружу `config/`, `db/`, `.git` и markdown-файлы.
 
-**Туннель.** Войти в Tuna (токен — в личном кабинете), занять поддомен в `tuna.free` и запустить:
+**Туннель.** Войти в Tuna (токен — в личном кабинете) и запустить туннель на постоянном поддомене — без `--subdomain` выдаётся случайный адрес, а постоянный Tuna показывает при запуске:
 
 ```bash
 tuna config save-token <токен>
@@ -425,8 +425,8 @@ tuna http 8090 --subdomain=<поддомен>
 **`config/app.php`** — внешние адреса через туннель, WS-сервер — за nginx:
 
 ```php
-define('BASE_URL', 'https://<поддомен>.tuna.free');
-define('WEBSOCKET_URL', 'wss://<поддомен>.tuna.free/ws');
+define('BASE_URL', 'https://<поддомен>.a.tuna.free');
+define('WEBSOCKET_URL', 'wss://<поддомен>.a.tuna.free/ws');
 define('WEBSOCKET_LISTEN', 'tcp://127.0.0.1:8081');
 ```
 
@@ -441,8 +441,8 @@ php websocket/server.php
 **Проверка** — как в [шаге 12](#12-проверка), с адресом туннеля:
 
 ```bash
-curl -s https://<поддомен>.tuna.free/global/start
-curl -s https://<поддомен>.tuna.free/config/db.php
+curl -s https://<поддомен>.a.tuna.free/global/start
+curl -s https://<поддомен>.a.tuna.free/config/db.php
 ```
 
 Перед тем как раздавать адрес: в локальной БД есть тестовые пользователи с паролями из [Test_Users.md](Test_Users.md) — через туннель под ними сможет войти любой. Для доступа только своим — `tuna http 8090 --basic-auth=логин:пароль` (клиенту тогда нужен заголовок `Authorization`).
