@@ -30,5 +30,5 @@ Response::success([
     'conversations' => $conversations,
     'notFoundIds'   => $notFoundIds,
 ], [
-    Action::users(array_merge([], ...array_column($conversations, 'memberIds'))),
+    Action::users(Conversation::userIdsOf($conversations)),
 ]);

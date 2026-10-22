@@ -9,6 +9,7 @@ class ErrorCode
     const INVALID_PARAMS   = 1004;
     const INVALID_TEXT     = 1005;
     const INVALID_CLIENT_ID = 1006;
+    const INVALID_DESCRIPTION = 1007;
 
     // Auth
     const LOGIN_TAKEN      = 2001;
@@ -29,6 +30,12 @@ class ErrorCode
     // Conversations
     const CONVERSATION_WITH_SELF = 5001;
     const CONVERSATION_NOT_FOUND = 5002;
+    const CONVERSATION_NOT_GROUP = 5003;
+    const GROUP_FORBIDDEN        = 5004;
+    const GROUP_MEMBERS_LIMIT    = 5005;
+    const GROUP_ALREADY_MEMBER   = 5006;
+    const GROUP_NOT_MEMBER       = 5007;
+    const GROUP_OWNER_TARGET     = 5008;
 
     // Messages
     const MESSAGE_NOT_FOUND       = 6001;

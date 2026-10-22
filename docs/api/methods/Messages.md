@@ -353,6 +353,7 @@
     },
     "lastMessage": {
       "messageId": 15,
+      "senderId": 1,
       "type": "text",
       "text": "Привет! Как дела?",
       "updatedAt": 1790846520456

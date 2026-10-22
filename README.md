@@ -7,7 +7,7 @@
 - регистрация, вход, сессии на cookie;
 - профиль и аватар — загрузка изображений с уменьшенной копией;
 - поиск пользователей;
-- личные переписки, сообщения с правкой и идемпотентной отправкой (`clientId`);
+- личные переписки и группы до 100 участников (владелец, добавление и удаление, выход), сообщения с правкой и идемпотентной отправкой (`clientId`);
 - список чатов с подъёмом по новому сообщению и последним сообщением;
 - синхронизация клиентского кэша после оффлайна — списка переписок и сообщений;
 - счётчики непрочитанных и прочтение собеседником («галочки»);
@@ -57,10 +57,10 @@ php tests/run.php
 
 ```
 index.php        роутер REST API
-global/ auth/ profile/ files/ users/ conversations/ messages/
+global/ auth/ profile/ files/ users/ conversations/ groups/ messages/
                  обработчики методов: файл на метод, каталог = префикс URL
 admin/           админ-панель
-core/            общий код: инфраструктура (DB, Response, Session, …) и сущности (User, Conversation, Message, File)
+core/            общий код: инфраструктура (DB, Response, Session, …) и сущности (User, Conversation, Group, Message, File)
 websocket/       WebSocket-сервер
 config/          настройки (db.php и app.php — локальные, не в git)
 db/              миграции схемы БД
@@ -78,7 +78,7 @@ docs/            документация
 | Документ | Содержание |
 |----------|------------|
 | [General.md](docs/api/General.md) | Формат запросов и ответов, сессия, время, actions |
-| [Objects.md](docs/api/Objects.md) | Объекты API: User, File, Conversation, Message, … |
+| [Objects.md](docs/api/Objects.md) | Объекты API: User, File, Conversation, GroupInfo, Message, … |
 | [Errors.md](docs/api/Errors.md) | Коды ошибок |
 | [Methods.md](docs/api/Methods.md) | REST-методы по группам |
 | [WebSocket.md](docs/api/WebSocket.md) | Протокол WebSocket и события |
@@ -98,6 +98,7 @@ docs/            документация
 | [MessageSync.md](docs/architecture/MessageSync.md) | Синхронизация кэша сообщений |
 | [UnreadMessages.md](docs/architecture/UnreadMessages.md) | Непрочитанные сообщения и версия пользователя |
 | [ReadReceipts.md](docs/architecture/ReadReceipts.md) | Прочтение собеседником |
+| [Groups.md](docs/architecture/Groups.md) | Групповые чаты: состав, владелец, выход, метки удаления |
 
 ### Эксплуатация
 

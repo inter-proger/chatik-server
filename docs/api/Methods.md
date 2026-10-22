@@ -40,6 +40,15 @@
 - [POST /conversations/markRead — Отметка прочтения](methods/Conversations.md#post-conversationsmarkread--отметка-прочтения)
 - [GET /conversations/getMembersReadMeta — Прочтение другими участниками](methods/Conversations.md#get-conversationsgetmembersreadmeta--прочтение-другими-участниками)
 
+## [/groups](methods/Groups.md) — Групповые переписки
+
+- [POST /groups/create — Создание группы](methods/Groups.md#post-groupscreate--создание-группы)
+- [POST /groups/addMembers — Добавление участников](methods/Groups.md#post-groupsaddmembers--добавление-участников)
+- [POST /groups/removeMembers — Удаление участников](methods/Groups.md#post-groupsremovemembers--удаление-участников)
+- [POST /groups/changeOwner — Передача владения](methods/Groups.md#post-groupschangeowner--передача-владения)
+- [GET /groups/getInfo — Состав группы](methods/Groups.md#get-groupsgetinfo--состав-группы)
+- [POST /groups/leave — Выход из группы](methods/Groups.md#post-groupsleave--выход-из-группы)
+
 ## [/messages](methods/Messages.md) — Сообщения
 
 - [GET /messages/getList — Сообщения переписки](methods/Messages.md#get-messagesgetlist--сообщения-переписки)

@@ -25,6 +25,7 @@
       "type": "single",
       "memberIds": [1, 2],
       "name": null,
+      "description": null,
       "avatar": null,
       "opponentUserId": 1,
       "lastMessage": null,
@@ -78,7 +79,7 @@
 | `userId`            | Int | Кто прочитал |
 | `lastReadMessageId` | Int | Новый указатель прочтения участника |
 
-`userIds` нет: `userId` — участник переписки, клиент уже знает его из `memberIds` переписки.
+`userIds` — `[userId]`: у группы состава в Conversation нет, прочитавший может быть ещё не загружен.
 
 ```json
 {
@@ -89,7 +90,8 @@
     "conversationId": 1,
     "userId": 2,
     "lastReadMessageId": 15
-  }
+  },
+  "userIds": [2]
 }
 ```
 

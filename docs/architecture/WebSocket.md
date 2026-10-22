@@ -140,8 +140,15 @@ WS-сервер генерирует `uid` для каждого отправл�
 | `conversations` / `singleCreated` | `/conversations/createSingle`, только если переписка создана | Участники; отдельная доставка на каждого (своя `opponentUserId`) | `memberIds` |
 | `messages` / `received`           | `/messages/send`                | Все участники переписки  | `[senderId]`  |
 | `messages` / `edited`             | `/messages/edit`, только если текст изменился | Все участники переписки | `[senderId]` |
+| `conversations` / `read`          | `/conversations/markRead`, если указатель сдвинулся | Прочитавший | — |
+| `conversations` / `memberRead`    | Там же, одним `publishEach` с `read` | Остальные участники | `[userId]` |
+| `groups` / `created`              | `/groups/create`                | Создатель                | `[создатель]` |
+| `groups` / `membersAdded`         | `/groups/addMembers`, если кто-то добавлен | Добавленные — отдельная доставка на каждого (своя `changeVersion`); остальные участники — одна доставка с GroupInfo | `addedUserIds` |
+| `groups` / `membersRemoved`       | `/groups/removeMembers`, если кто-то удалён | Удалённые — отдельная доставка на каждого (метка и счётчик); оставшиеся — одна доставка с GroupInfo | `removedUserIds` |
+| `groups` / `memberLeft`           | `/groups/leave`                 | Вышедший (метка и счётчик); оставшиеся (GroupInfo) | вышедший и новый владелец |
+| `groups` / `ownerChanged`         | `/groups/changeOwner`           | Все участники            | `[newOwnerUserId]` |
 
-Признак создания переписки возвращает `Conversation::findOrCreateSingle($userId, $otherUserId, $created)` через третий параметр; участников переписки для `send` / `edit` — `Conversation::findMemberIds()`.
+Признак создания переписки возвращает `Conversation::findOrCreateSingle($userId, $otherUserId, $created)` через третий параметр; участников переписки для `send` / `edit` — `Conversation::findMemberIds()`. События групп собирают `Group::publish*()` из результата изменения — тела и версии сняты в транзакции изменения ([Groups.md](Groups.md#websocket-группа-groups)).
 
 ## Конфигурация
 

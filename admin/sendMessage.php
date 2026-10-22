@@ -28,6 +28,9 @@ if ($text === null) {
 }
 
 $message = Message::send((int) $conversationId, (int) $userId, $text, null, $isNew, $readInfos);
+if ($message === null) {
+    Response::error(ErrorCode::CONVERSATION_NOT_FOUND);
+}
 
 // Как в /messages/send
 Message::publishReceived($message, $readInfos);

@@ -200,7 +200,7 @@ function conversationLabel(c) {
     if (c.type === 'single') {
         return userLabel(state.usersById[c.opponentUserId]);
     }
-    return (c.name || 'Группа без названия') + ' · участников: ' + c.memberIds.length;
+    return c.name || 'Группа без названия';
 }
 
 async function loadConversations() {

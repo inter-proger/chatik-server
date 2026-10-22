@@ -36,6 +36,11 @@ $body = ['message' => $message];
 if ($text !== $message['text']) {
     $message = Message::edit($message['messageId'], $text, $isLast, $changeVersions);
 
+    // Удалён из группы после проверки выше — участие перепроверено под блокировкой
+    if ($message === null) {
+        Response::error(ErrorCode::MESSAGE_NOT_FOUND);
+    }
+
     // lastMessage — только если отредактировано последнее сообщение переписки
     $body = ['message' => $message] + ($isLast ? ['lastMessage' => Message::toLastMessage($message)] : []);
 

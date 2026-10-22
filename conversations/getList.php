@@ -42,9 +42,11 @@ $db->exec('SET TRANSACTION ISOLATION LEVEL REPEATABLE READ');
 $db->beginTransaction();
 try {
     // Берём на одну больше, чтобы узнать, есть ли следующая страница
-    $conversations = $changedAfter !== null
-        ? Conversation::findChangedByMember($userId, $changedAfter, $count + 1)
-        : Conversation::findListByMember($userId, $offset, $count + 1, $positionUpdatedAfter);
+    if ($changedAfter !== null) {
+        $changed = Conversation::findChangedByMember($userId, $changedAfter, $count + 1);
+    } else {
+        $conversations = Conversation::findListByMember($userId, $offset, $count + 1, $positionUpdatedAfter);
+    }
     $total = Conversation::findTotalUnreadCount($userId);
     $db->commit();
 } catch (Throwable $e) {
@@ -52,14 +54,32 @@ try {
     throw $e;
 }
 
-$hasNext = count($conversations) > $count;
-$conversations = array_slice($conversations, 0, $count);
+// Страница changedAfter — общая для переписок и меток удаления: лишняя запись — самая новая из двух частей
+$removedConversations = [];
+if ($changedAfter !== null) {
+    $conversations        = $changed['conversations'];
+    $removedConversations = $changed['removedConversations'];
+    $hasNext = count($conversations) + count($removedConversations) > $count;
+    if ($hasNext) {
+        $lastConversation = end($conversations);
+        $lastRemoved      = end($removedConversations);
+        if ($lastRemoved && (!$lastConversation || $lastRemoved['changeVersion'] > $lastConversation['changeVersion'])) {
+            array_pop($removedConversations);
+        } else {
+            array_pop($conversations);
+        }
+    }
+} else {
+    $hasNext = count($conversations) > $count;
+    $conversations = array_slice($conversations, 0, $count);
+}
 
 Response::success([
-    'conversations'    => $conversations,
-    'hasNext'          => $hasNext,
+    'conversations'        => $conversations,
+    'removedConversations' => $removedConversations,
+    'hasNext'              => $hasNext,
     'totalUnreadCount' => $total['totalUnreadCount'],
     'changeVersion'    => $total['changeVersion'],
 ], [
-    Action::users(array_merge([], ...array_column($conversations, 'memberIds'))),
+    Action::users(Conversation::userIdsOf($conversations)),
 ]);

@@ -63,7 +63,11 @@ Action — указание клиенту, которое приходит в �
 | Метод                          | Какие пользователи                                     |
 |--------------------------------|--------------------------------------------------------|
 | `/conversations/createSingle`  | Участники переписки (`memberIds`)                      |
-| `/conversations/getList`       | Участники всех переписок в выдаче (`memberIds`)        |
+| `/conversations/getList`, `/conversations/getBatch` | Участники личных переписок в выдаче (`memberIds`) и отправители последних сообщений (`lastMessage.senderId`) |
+| `/conversations/getMembersReadMeta` | Участники в ответе (`membersReadMeta[].userId`)   |
+| `/groups/create`               | Создатель                                              |
+| `/groups/addMembers`           | Добавленные (`addedUserIds`)                           |
+| `/groups/getInfo`              | Все участники группы                                   |
 | `/messages/getList`            | Отправители сообщений в выдаче (`senderId`)            |
 | `/messages/getBlock`           | Отправители сообщений блока (`senderId`)               |
 | `/messages/send`               | Отправитель сообщения (`senderId`)                     |
