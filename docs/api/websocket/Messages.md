@@ -1,6 +1,6 @@
 # WebSocket: `messages` — Сообщения
 
-[← WebSocket](../WebSocket.md) · [Документация API](../../../API_Documentation.md)
+[← WebSocket](../WebSocket.md) · [Документация API](../README.md)
 
 ## `messages` / `received` — новое сообщение
 

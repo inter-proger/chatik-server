@@ -56,7 +56,7 @@ class WsInternalConnection
 /**
  * WebSocket-сервер: один процесс, цикл на stream_select().
  * Принимает клиентов на $options['listen'] и вызовы API на 127.0.0.1:$options['internalPort'].
- * Протокол — docs/api/WebSocket.md; устройство — WebSocket_Architecture.md.
+ * Протокол — docs/api/WebSocket.md; устройство — docs/architecture/WebSocket.md.
  */
 class WsServer
 {

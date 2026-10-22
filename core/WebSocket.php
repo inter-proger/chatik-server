@@ -7,7 +7,7 @@ require_once __DIR__ . '/../config/websocket.php';
 
 /**
  * WebSocket со стороны API: токены подключения и вызовы WS-сервера (websocket/server.php).
- * Протокол — docs/api/WebSocket.md; устройство — WebSocket_Architecture.md.
+ * Протокол — docs/api/WebSocket.md; устройство — docs/architecture/WebSocket.md.
  */
 class WebSocket
 {

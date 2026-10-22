@@ -1,6 +1,6 @@
 # Объекты
 
-[← Документация API](../../API_Documentation.md)
+[← Документация API](README.md)
 
 ## Объект User
 

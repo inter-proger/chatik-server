@@ -1,6 +1,6 @@
 # /conversations — Переписки
 
-[← Методы API](../Methods.md) · [Документация API](../../../API_Documentation.md)
+[← Методы API](../Methods.md) · [Документация API](../README.md)
 
 ## POST /conversations/createSingle — Создание личной переписки
 

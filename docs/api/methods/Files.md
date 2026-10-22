@@ -1,6 +1,6 @@
 # /files — Файлы
 
-[← Методы API](../Methods.md) · [Документация API](../../../API_Documentation.md)
+[← Методы API](../Methods.md) · [Документация API](../README.md)
 
 ## POST /files/uploadImage — Загрузка изображения
 

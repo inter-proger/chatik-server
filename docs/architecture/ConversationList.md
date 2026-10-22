@@ -1,8 +1,10 @@
 # Список переписок: поднятие чатов и последнее сообщение
 
-Описывает, как переписка поднимается наверх списка при новом сообщении, как в списке показывается последнее сообщение и как клиент синхронизирует список после оффлайна. Реализовано; клиентский контракт — в `docs/api/` ([Conversation и LastMessage](docs/api/Objects.md#объект-conversation), [слияние переписки](docs/api/WebSocket.md#слияние-переписки), [`/conversations/getList` и `getBatch`](docs/api/methods/Conversations.md), [события `messages`](docs/api/websocket/Messages.md)), здесь — серверная сторона и обоснования. При расхождении верен `docs/api/`.
+[← Обзор архитектуры](Overview.md)
 
-> **Фильтр `updatedInfoAfter` / `updatedInfoAfterId` заменён на `changedAfter`** — курсор по версии пользователя, который ловит и изменения информации, и прочтение (см. [Unread_Messages_Architecture.md](Unread_Messages_Architecture.md)). Описание `updatedInfoAfter` ниже (сценарий 2 и связанное) — история решения; актуальный контракт — [синхронизация списка](docs/api/methods/Conversations.md#синхронизация-списка).
+Описывает, как переписка поднимается наверх списка при новом сообщении, как в списке показывается последнее сообщение и как клиент синхронизирует список после оффлайна. Реализовано; клиентский контракт — в `docs/api/` ([Conversation и LastMessage](../api/Objects.md#объект-conversation), [слияние переписки](../api/WebSocket.md#слияние-переписки), [`/conversations/getList` и `getBatch`](../api/methods/Conversations.md), [события `messages`](../api/websocket/Messages.md)), здесь — серверная сторона и обоснования. При расхождении верен `docs/api/`.
+
+> **Фильтр `updatedInfoAfter` / `updatedInfoAfterId` заменён на `changedAfter`** — курсор по версии пользователя, который ловит и изменения информации, и прочтение (см. [UnreadMessages.md](UnreadMessages.md)). Описание `updatedInfoAfter` ниже (сценарий 2 и связанное) — история решения; актуальный контракт — [синхронизация списка](../api/methods/Conversations.md#синхронизация-списка).
 
 ## Коротко
 
@@ -39,7 +41,7 @@
 
 | Поле        | Тип            | Описание                                                                 |
 |-------------|----------------|--------------------------------------------------------------------------|
-| `messageId` | Int            | Идентификатор сообщения ([Message](docs/api/Objects.md#объект-message).`messageId`) |
+| `messageId` | Int            | Идентификатор сообщения ([Message](../api/Objects.md#объект-message).`messageId`) |
 | `type`      | String         | Тип сообщения — как `Message.type` (пока только `text`)                  |
 | `text`      | String \| null | Текст сообщения; `null` для типов без текста (появятся позже)            |
 | `updatedAt` | Int            | Время последнего изменения сообщения — как `Message.updatedAt`, миллисекунды. Версия LastMessage при [слиянии](#слияние-переписки-на-клиенте) |
@@ -200,7 +202,7 @@ WHERE c.last_message_id = ?
 
 ## Слияние переписки на клиенте
 
-Общее правило [синхронизации](docs/api/WebSocket.md#синхронизация) («побеждает версия с большим `updatedAt`») для Conversation не подходит: у неё две независимые версии, а события `messages` / `received` и `edited` несут не полный объект, а только позицию и `lastMessage`. Поэтому для Conversation правило заменяется тремя, которые клиент применяет по порядку к каждой пришедшей версии переписки — из `getList`, `getBatch`, `createSingle`, `conversations` / `singleCreated`, `messages` / `received` и `edited`:
+Общее правило [синхронизации](../api/WebSocket.md#синхронизация) («побеждает версия с большим `updatedAt`») для Conversation не подходит: у неё две независимые версии, а события `messages` / `received` и `edited` несут не полный объект, а только позицию и `lastMessage`. Поэтому для Conversation правило заменяется тремя, которые клиент применяет по порядку к каждой пришедшей версии переписки — из `getList`, `getBatch`, `createSingle`, `conversations` / `singleCreated`, `messages` / `received` и `edited`:
 
 1. **Позиция.** Версия позиции — пара `(positionUpdatedAt, lastMessage.messageId)`, сравнивается лексикографически; у `lastMessage: null` — `messageId = 0`. Если пришедшая пара **строго больше** локальной — взять `positionUpdatedAt` и `lastMessage` целиком и переместить переписку по сортировке. `messageId` в паре нужен для сообщений, отправленных в одну миллисекунду: id внутри переписки растут строго, поэтому второе сообщение не отбрасывается как «не более новое».
 2. **Текст последнего сообщения.** Если после шага 1 `lastMessage.messageId` пришедшей версии совпадает с локальным, а `lastMessage.updatedAt` больше локального — взять `lastMessage`. Так правка применяется только к тому же сообщению и не откатывается более старой правкой.
@@ -253,7 +255,7 @@ WHERE c.last_message_id = ?
 
 ## `/conversations/getBatch`
 
-`GET /conversations/getBatch` — переписки по списку id. Нужен, когда клиент узнал о переписке, которой у него нет: `messages` / `received` по чату, не прогруженному пагинацией (или созданному на другом устройстве), в дальнейшем — пуши и диплинки. Устроен как [`/users/getBatch`](docs/api/methods/Users.md#get-usersgetbatch--пользователи-по-списку-id). Требует активной сессии.
+`GET /conversations/getBatch` — переписки по списку id. Нужен, когда клиент узнал о переписке, которой у него нет: `messages` / `received` по чату, не прогруженному пагинацией (или созданному на другом устройстве), в дальнейшем — пуши и диплинки. Устроен как [`/users/getBatch`](../api/methods/Users.md#get-usersgetbatch--пользователи-по-списку-id). Требует активной сессии.
 
 ### Параметры запроса
 
@@ -293,7 +295,7 @@ WHERE c.last_message_id = ?
 }
 ```
 
-Также отдаётся [action `users`](docs/api/General.md#action-users) с участниками всех переписок в выдаче (не отдаётся, если список пуст).
+Также отдаётся [action `users`](../api/General.md#action-users) с участниками всех переписок в выдаче (не отдаётся, если список пуст).
 
 ### Ошибки
 

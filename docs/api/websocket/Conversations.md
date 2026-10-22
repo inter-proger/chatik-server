@@ -1,6 +1,6 @@
 # WebSocket: `conversations` — Переписки
 
-[← WebSocket](../WebSocket.md) · [Документация API](../../../API_Documentation.md)
+[← WebSocket](../WebSocket.md) · [Документация API](../README.md)
 
 ## `conversations` / `singleCreated` — создана личная переписка
 

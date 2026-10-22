@@ -1,5 +1,7 @@
 # Тестовые пользователи
 
+[← README](../../README.md)
+
 20 тестовых пользователей на локальном сервере (`http://localhost:8080`, БД из `config/db.php`), созданы 2026-10-07 через `/auth/signup`. Каждому загружен аватар (`/files/uploadImage` → `/profile/setAvatar`); фото взяты со [randomuser.me](https://randomuser.me) (портреты 128×128, пол совпадает с именем).
 
 Тестовый раннер (`php tests/run.php`) работает с отдельной БД `serverai_test` и пересоздаёт её — этих пользователей там нет.

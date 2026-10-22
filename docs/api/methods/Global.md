@@ -1,6 +1,6 @@
 # /global — Старт приложения и WebSocket-токен
 
-[← Методы API](../Methods.md) · [Документация API](../../../API_Documentation.md)
+[← Методы API](../Methods.md) · [Документация API](../README.md)
 
 ## GET /global/start — Старт работы приложения
 

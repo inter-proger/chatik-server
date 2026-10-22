@@ -1,6 +1,6 @@
 # /users — Пользователи
 
-[← Методы API](../Methods.md) · [Документация API](../../../API_Documentation.md)
+[← Методы API](../Methods.md) · [Документация API](../README.md)
 
 ## GET /users/getList — Список пользователей
 

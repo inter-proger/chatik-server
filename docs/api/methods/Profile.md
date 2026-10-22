@@ -1,6 +1,6 @@
 # /profile — Профиль текущего пользователя
 
-[← Методы API](../Methods.md) · [Документация API](../../../API_Documentation.md)
+[← Методы API](../Methods.md) · [Документация API](../README.md)
 
 ## GET /profile/get — Профиль текущего пользователя
 
